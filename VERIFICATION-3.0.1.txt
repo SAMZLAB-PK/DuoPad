@@ -1,0 +1,15 @@
+DOUPAD 3.0.1 test beta — verification
+
+Gradle :app:assembleDebug :app:testDebugUnitTest: BUILD SUCCESSFUL
+Android unit tests: 4 passed, 0 failed
+PC host protocol tests: 6 passed, 0 failed
+APK signature: apksigner verify passed, APK v2 scheme
+Application ID: com.samz.doupad.beta
+Version code: 6
+Minimum Android: 8.0 (API 26); target API 35
+
+No emulator or physical phone/TV/PC input test was performed.
+Live mirroring, installation and connection must still be tested on hardware.
+Known feature limitations are listed in TEST-THIS-BUILD.md.
+
+APK SHA-256: 23fba86e8d1d46db78b1eaa935071d9ac31363bdcfa7e96867c4839cc587501f

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DOUPAD</string>
+    <string name="pc_mode">PC</string>
+    <string name="android_mode">Android</string>
+    <string name="connecting">Connecting…</string>
+    <string name="connected">Connected</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="scan_devices">Scan Devices</string>
+    <string name="touchpad">Touchpad</string>
+    <string name="keyboard">Keyboard</string>
+    <string name="gamepad">Gamepad</string>
+    <string name="remote">Remote</string>
+    <string name="apps">Apps</string>
+    <string name="files">Files</string>
+    <string name="shell">Shell</string>
+    <string name="install_apk">Install APK</string>
+    <string name="screenshot">Screenshot</string>
+    <string name="reboot">Reboot</string>
+    <string name="settings">Settings</string>
+    <string name="notification_title">DOUPAD Active</string>
+    <string name="notification_text">Secure connection active</string>
+    <string name="bluetooth_hid">Bluetooth HID</string>
+    <string name="network_host">Network Host</string>
+    <string name="scan_qr">Scan QR</string>
+    <string name="manual_ip">Enter IP</string>
+    <string name="clipboard_sync">Clipboard Sync</string>
+    <string name="media_controls">Media</string>
+    <string name="security_pin">Security PIN</string>
+</resources>

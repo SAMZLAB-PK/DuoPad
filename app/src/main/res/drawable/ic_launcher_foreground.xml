@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple "U" letter style icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,28 L30,62 Q30,78 54,78 Q78,78 78,62 L78,28 L68,28 L68,62 Q68,70 54,70 Q40,70 40,62 L40,28 Z"/>
+    <!-- Small pointer/cursor accent -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M72,72 L88,80 L80,72 L88,64 Z"/>
+</vector>

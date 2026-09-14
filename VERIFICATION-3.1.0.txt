@@ -1,0 +1,11 @@
+DOUPAD 3.1.0 realtime beta — verification performed 2026-09-14
+
+PASS: verification/test_doupad_source.py
+PASS: verification/test_realtime_source.py
+PASS: pure Kotlin RealtimeProtocolSmoke (ScrcpyControlProtocol + MirrorCoordinateMapper)
+PASS: Python PC host protocol tests — 6 passed, 0 failed
+
+Full Android Gradle build was NOT performed in this environment.
+Reason: no Android SDK is installed and Gradle 8.11.1 is not cached; the wrapper attempted to reach services.gradle.org but network access is unavailable.
+
+Hardware phone/TV validation is still required for real latency, codec compatibility, scroll direction and OEM-specific input behavior.
