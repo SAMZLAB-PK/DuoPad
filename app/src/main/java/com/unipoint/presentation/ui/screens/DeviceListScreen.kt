@@ -186,8 +186,8 @@ fun DeviceListScreen(
                     item {
                         EmptyDeviceCard(
                             icon = Icons.Default.Computer,
-                            title = if (uiState.isScanningPc) "Looking for UniPoint Host…" else "No PC Host detected",
-                            subtitle = "Start UniPoint Host on the PC. Discovery retries automatically.",
+                            title = if (uiState.isScanningPc) "Looking for DOUPAD Host…" else "No PC Host detected",
+                            subtitle = "Start DOUPAD Host on the PC. Auto-discovery, saved PCs and QR pairing are supported.",
                             actionLabel = "Scan again",
                             onAction = { viewModel.scanPc() }
                         )
@@ -195,7 +195,7 @@ fun DeviceListScreen(
                 } else {
                     items(uiState.pcDevices, key = { "pc:${it.id}" }) { pc ->
                         PcDeviceCard(pc) {
-                            if (pc.name.contains("PIN", ignoreCase = true)) {
+                            if (pc.requiresPin) {
                                 securePc = pc
                             } else {
                                 val (ip, port) = splitAddress(pc.address)
@@ -316,9 +316,14 @@ private fun AndroidDeviceCard(device: AndroidDevice, onClick: () -> Unit) {
 @Composable
 private fun PcDeviceCard(device: PcDevice, onClick: () -> Unit) {
     DeviceCardBase(
-        icon = if (device.name.contains("PIN", true)) Icons.Default.Lock else Icons.Default.Computer,
+        icon = if (device.requiresPin) Icons.Default.Lock else Icons.Default.Computer,
         title = device.name,
-        subtitle = device.address + if (device.isConnected) "  •  Connected" else "  •  UniPoint Host verified",
+        subtitle = device.address + when {
+            device.isConnected -> "  •  Connected"
+            device.isReachable -> "  •  DOUPAD Host online"
+            device.isSaved -> "  •  Saved PC — tap to retry"
+            else -> ""
+        },
         connected = device.isConnected,
         onClick = onClick
     )

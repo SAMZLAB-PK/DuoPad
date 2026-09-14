@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
-call BUILD-DOUPAD-3.1.0.bat
+call BUILD-DOUPAD-3.2.0.bat
 if errorlevel 1 exit /b %errorlevel%
-set "APK=%CD%\DOUPAD-3.1.0-realtime-debug.apk"
+set "APK=%CD%\DOUPAD-3.2.0-connectivity-debug.apk"
 if not defined ANDROID_SDK_ROOT if defined ANDROID_HOME set "ANDROID_SDK_ROOT=%ANDROID_HOME%"
 if not defined ANDROID_SDK_ROOT set "ANDROID_SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
 set "ADB=%ANDROID_SDK_ROOT%\platform-tools\adb.exe"

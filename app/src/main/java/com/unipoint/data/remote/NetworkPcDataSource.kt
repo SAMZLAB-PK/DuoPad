@@ -2,7 +2,11 @@ package com.unipoint.data.remote
 
 import android.content.Context
 import android.util.Log
+import com.unipoint.core.network.PcConnectionHistoryCodec
+import com.unipoint.core.network.PcDiscoveryPolicy
 import com.unipoint.core.network.PcDiscoveryProtocol
+import com.unipoint.core.network.PcHistoryEntry
+import com.unipoint.core.network.PcHostIdentity
 import com.unipoint.domain.model.InputEvent
 import com.unipoint.domain.model.MouseButton
 import com.unipoint.domain.model.PcConnectionType
@@ -26,7 +30,7 @@ import java.net.SocketTimeoutException
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicLong
 
-/** Binary client + zero-config LAN discovery for the UniPoint desktop host. */
+/** Binary client + resilient LAN discovery for the DOUPAD desktop host. */
 class NetworkPcDataSource constructor(
     @ApplicationContext private val context: Context
 ) {
@@ -45,52 +49,88 @@ class NetworkPcDataSource constructor(
     var isConnected = false
         private set
 
-    suspend fun discover(port: Int = 27845): List<PcDevice> = withContext(Dispatchers.IO) {
+    suspend fun discover(port: Int = PcDiscoveryPolicy.DEFAULT_TCP_PORT): List<PcDevice> = withContext(Dispatchers.IO) {
         val found = linkedMapOf<String, PcDevice>()
+        val history = historyEntries()
+        val local = localSubnets()
 
-        // 1) Last successful PC: usually returns in a few milliseconds.
-        prefs.getString("last_pc", null)?.let { saved ->
-            val ip = saved.substringBefore(':')
-            val savedPort = saved.substringAfter(':', port.toString()).toIntOrNull() ?: port
-            probeHost(ip, savedPort, 180, 350)?.let { found[it.id] = it }
+        // 1) PalmPoint-style remembered PCs are visible immediately, even if currently offline.
+        history.forEach { saved ->
+            val id = "${saved.host}:${saved.port}"
+            found[id] = PcDevice(
+                id = id,
+                name = saved.name + if (saved.authRequired) " (PIN)" else "",
+                address = id,
+                type = PcConnectionType.NETWORK,
+                lastSeen = saved.lastSeen,
+                requiresPin = saved.authRequired,
+                isSaved = true,
+                isReachable = false
+            )
         }
 
-        // 2) Proper zero-config discovery. This also works when the PC address changed.
-        udpDiscover().forEach { device -> found[device.id] = device }
-        if (found.isNotEmpty()) return@withContext found.values.toList()
+        // Probe remembered endpoints first with relaxed timeouts; Windows may still be waking up.
+        coroutineScope {
+            history.map { saved ->
+                async {
+                    probeHost(
+                        saved.host,
+                        saved.port,
+                        PcDiscoveryPolicy.SAVED_CONNECT_TIMEOUT_MS,
+                        PcDiscoveryPolicy.SAVED_READ_TIMEOUT_MS
+                    )?.copy(
+                        name = saved.name + if (saved.authRequired) " (PIN)" else "",
+                        requiresPin = saved.authRequired,
+                        isSaved = true,
+                        isReachable = true
+                    )
+                }
+            }.awaitAll().filterNotNull().forEach { found[it.id] = it }
+        }
 
-        // 3) Fast priority probes across the user's common routed subnets.
-        val subnets = buildList {
-            addAll(localSubnets())
-            prefs.getString("last_pc", null)?.substringBefore(':')
-                ?.substringBeforeLast('.', "")?.takeIf { it.isNotBlank() }?.let(::add)
-            add("192.168.1")
-            add("192.168.10")
-            add("192.168.0")
-        }.distinct().take(5)
+        // 2) Multi-round broadcast discovery: limited broadcast + interface/directed broadcasts.
+        udpDiscover(local).forEach { device -> found[device.id] = device }
+        if (found.values.any { it.isReachable }) return@withContext sortDevices(found.values)
 
+        // 3) TCP fallback on the actual LAN subnet, plus the last known subnet if it changed.
+        val lastHost = history.firstOrNull()?.host ?: prefs.getString("last_pc", null)?.substringBefore(':')
+        val subnets = PcDiscoveryPolicy.candidateSubnets(local, lastHost).take(4)
         val priority = listOf(1, 2, 5, 10, 20, 50, 100, 101, 150, 200, 254)
         for (subnet in subnets) {
             coroutineScope {
                 priority.map { end ->
-                    async { probeHost("$subnet.$end", port, 140, 300) }
+                    async {
+                        probeHost(
+                            "$subnet.$end",
+                            port,
+                            PcDiscoveryPolicy.PRIORITY_CONNECT_TIMEOUT_MS,
+                            PcDiscoveryPolicy.PRIORITY_READ_TIMEOUT_MS
+                        )
+                    }
                 }.awaitAll().filterNotNull().forEach { found[it.id] = it }
             }
         }
-        if (found.isNotEmpty()) return@withContext found.values.toList()
+        if (found.values.any { it.isReachable }) return@withContext sortDevices(found.values)
 
-        // 4) Full scan only as a fallback. Concurrency keeps this bounded.
-        for (subnet in subnets.take(3)) {
-            (1..254).filterNot { it in priority }.chunked(48).forEach { chunk ->
+        // 4) Exhaustive scan is last resort only, and never wastes time on unrelated default subnets.
+        for (subnet in subnets.take(2)) {
+            (1..254).filterNot { it in priority }.chunked(56).forEach { chunk ->
                 coroutineScope {
                     chunk.map { end ->
-                        async { probeHost("$subnet.$end", port, 110, 260) }
+                        async {
+                            probeHost(
+                                "$subnet.$end",
+                                port,
+                                PcDiscoveryPolicy.FULL_SCAN_CONNECT_TIMEOUT_MS,
+                                PcDiscoveryPolicy.FULL_SCAN_READ_TIMEOUT_MS
+                            )
+                        }
                     }.awaitAll().filterNotNull().forEach { found[it.id] = it }
                 }
-                if (found.isNotEmpty()) return@withContext found.values.toList()
+                if (found.values.any { it.isReachable }) return@withContext sortDevices(found.values)
             }
         }
-        found.values.toList()
+        sortDevices(found.values)
     }
 
     suspend fun connect(ip: String, port: Int, pin: String? = null): Result<Unit> =
@@ -112,7 +152,12 @@ class NetworkPcDataSource constructor(
                         s.close()
                         return@withContext Result.failure(Exception("Not a DOUPAD Host on $cleanIp:$port"))
                     }
-                val authRequired = identity.contains("AUTH=1")
+                val parsedIdentity = PcHostIdentity.parse(identity)
+                    ?: run {
+                        s.close()
+                        return@withContext Result.failure(Exception("Unsupported DOUPAD Host identity"))
+                    }
+                val authRequired = parsedIdentity.authRequired
                 if (authRequired && pin.isNullOrBlank()) {
                     s.close()
                     return@withContext Result.failure(Exception("PC Host requires a PIN"))
@@ -141,6 +186,15 @@ class NetworkPcDataSource constructor(
                 lastLatency.set(System.currentTimeMillis() - verifyStart)
                 isConnected = true
                 prefs.edit().putString("last_pc", "$cleanIp:$port").apply()
+                saveHistory(
+                    PcHistoryEntry(
+                        host = cleanIp,
+                        port = port,
+                        name = parsedIdentity.name ?: historyEntries().firstOrNull { it.host == cleanIp && it.port == port }?.name ?: "DOUPAD PC",
+                        authRequired = authRequired,
+                        lastSeen = System.currentTimeMillis()
+                    )
+                )
                 Log.i(tag, "Verified DOUPAD Host $cleanIp:$port")
                 Result.success(Unit)
             } catch (e: Exception) {
@@ -204,46 +258,65 @@ class NetworkPcDataSource constructor(
 
     fun sendClipboard(text: String) = sendPacket(0x21, text.toByteArray(Charsets.UTF_8))
 
-    private fun udpDiscover(): List<PcDevice> {
+    private fun udpDiscover(localSubnets: List<String>): List<PcDevice> {
         val found = linkedMapOf<String, PcDevice>()
+        val verifiedAddresses = hashSetOf<String>()
         return try {
             DatagramSocket().use { socket ->
                 socket.broadcast = true
-                socket.soTimeout = 140
-                val payload = PcDiscoveryProtocol.REQUEST.toByteArray(Charsets.UTF_8)
+                socket.soTimeout = 180
                 val targets = linkedSetOf<InetAddress>()
-                targets += InetAddress.getByName("255.255.255.255")
-                try {
+
+                PcDiscoveryPolicy.broadcastAddresses(localSubnets).forEach { address ->
+                    runCatching { InetAddress.getByName(address) }.getOrNull()?.let { targets += it }
+                }
+                // Also trust the interface-provided broadcast when Android exposes it.
+                runCatching {
                     Collections.list(NetworkInterface.getNetworkInterfaces())
                         .filter { it.isUp && !it.isLoopback }
                         .flatMap { it.interfaceAddresses }
                         .mapNotNull { it.broadcast }
                         .forEach { targets += it }
-                } catch (_: Exception) {}
-
-                targets.forEach { target ->
-                    try {
-                        socket.send(DatagramPacket(payload, payload.size, target, PcDiscoveryProtocol.UDP_PORT))
-                    } catch (_: Exception) {}
                 }
 
-                val deadline = System.currentTimeMillis() + 900
-                val buffer = ByteArray(512)
-                while (System.currentTimeMillis() < deadline) {
-                    try {
-                        val packet = DatagramPacket(buffer, buffer.size)
-                        socket.receive(packet)
-                        val raw = String(packet.data, packet.offset, packet.length, Charsets.UTF_8)
-                        val announcement = PcDiscoveryProtocol.parse(raw) ?: continue
-                        val ip = packet.address.hostAddress ?: continue
-                        val verified = probeHost(ip, announcement.port, 220, 450) ?: continue
-                        val device = verified.copy(
-                            name = announcement.name + if (announcement.authRequired) " (PIN)" else ""
-                        )
-                        found[device.id] = device
-                    } catch (_: SocketTimeoutException) {
-                        // Keep listening until the short overall deadline expires.
+                repeat(PcDiscoveryPolicy.UDP_ROUNDS) {
+                    PcDiscoveryProtocol.REQUESTS.forEach { request ->
+                        val payload = request.toByteArray(Charsets.UTF_8)
+                        targets.forEach { target ->
+                            runCatching {
+                                socket.send(DatagramPacket(payload, payload.size, target, PcDiscoveryProtocol.UDP_PORT))
+                            }
+                        }
                     }
+
+                    val deadline = System.currentTimeMillis() + PcDiscoveryPolicy.UDP_ROUND_LISTEN_MS
+                    val buffer = ByteArray(512)
+                    while (System.currentTimeMillis() < deadline) {
+                        try {
+                            val packet = DatagramPacket(buffer, buffer.size)
+                            socket.receive(packet)
+                            val raw = String(packet.data, packet.offset, packet.length, Charsets.UTF_8)
+                            val announcement = PcDiscoveryProtocol.parse(raw) ?: continue
+                            val ip = packet.address.hostAddress ?: continue
+                            val key = "$ip:${announcement.port}"
+                            if (!verifiedAddresses.add(key)) continue
+                            val verified = probeHost(
+                                ip,
+                                announcement.port,
+                                PcDiscoveryPolicy.VERIFY_CONNECT_TIMEOUT_MS,
+                                PcDiscoveryPolicy.VERIFY_READ_TIMEOUT_MS
+                            ) ?: continue
+                            val device = verified.copy(
+                                name = announcement.name + if (announcement.authRequired) " (PIN)" else "",
+                                requiresPin = announcement.authRequired,
+                                isReachable = true
+                            )
+                            found[device.id] = device
+                        } catch (_: SocketTimeoutException) {
+                            // Keep listening until this round's deadline.
+                        }
+                    }
+                    if (found.isNotEmpty()) return@use
                 }
             }
             found.values.toList()
@@ -253,21 +326,29 @@ class NetworkPcDataSource constructor(
         }
     }
 
-    private fun probeHost(ip: String, port: Int, connectTimeout: Int = 250, readTimeout: Int = 550): PcDevice? {
+    private fun probeHost(
+        ip: String,
+        port: Int,
+        connectTimeout: Int = PcDiscoveryPolicy.VERIFY_CONNECT_TIMEOUT_MS,
+        readTimeout: Int = PcDiscoveryPolicy.VERIFY_READ_TIMEOUT_MS
+    ): PcDevice? {
         return try {
             Socket().use { s ->
                 s.tcpNoDelay = true
+                s.keepAlive = true
                 s.soTimeout = readTimeout
                 s.connect(InetSocketAddress(ip, port), connectTimeout)
                 val out = DataOutputStream(s.getOutputStream())
                 val inp = DataInputStream(s.getInputStream())
-                val identity = pingIdentity(out, inp) ?: return null
-                val secure = identity.contains("AUTH=1")
+                val identityText = pingIdentity(out, inp) ?: return null
+                val identity = PcHostIdentity.parse(identityText) ?: return null
                 PcDevice(
                     id = "$ip:$port",
-                    name = if (secure) "DOUPAD PC (PIN)" else "DOUPAD PC",
+                    name = (identity.name ?: "DOUPAD PC") + if (identity.authRequired) " (PIN)" else "",
                     address = "$ip:$port",
-                    type = PcConnectionType.NETWORK
+                    type = PcConnectionType.NETWORK,
+                    requiresPin = identity.authRequired,
+                    isReachable = true
                 )
             }
         } catch (_: Exception) {
@@ -280,8 +361,22 @@ class NetworkPcDataSource constructor(
         val response = readPacketFrom(inp) ?: return null
         if (response.first != 0x20.toByte()) return null
         val identity = response.second.toString(Charsets.UTF_8)
-        return identity.takeIf { it.startsWith("UNIPOINT/2") }
+        return identity.takeIf { PcHostIdentity.parse(it) != null }
     }
+
+    private fun historyEntries(): List<PcHistoryEntry> =
+        PcConnectionHistoryCodec.decode(prefs.getString("pc_history_v1", null))
+
+    private fun saveHistory(entry: PcHistoryEntry) {
+        val merged = listOf(entry) + historyEntries().filterNot { it.host == entry.host && it.port == entry.port }
+        prefs.edit().putString("pc_history_v1", PcConnectionHistoryCodec.encode(merged)).apply()
+    }
+
+    private fun sortDevices(devices: Collection<PcDevice>): List<PcDevice> = devices.sortedWith(
+        compareByDescending<PcDevice> { it.isReachable }
+            .thenByDescending { it.isConnected }
+            .thenByDescending { it.lastSeen }
+    )
 
     private fun sendPacket(type: Int, payload: ByteArray) {
         val out = output ?: return

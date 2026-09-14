@@ -1,49 +1,45 @@
-# UniPoint Pro — Windows Network Host
+# DOUPAD — Windows Network Host
 
 ## Quick setup
 
 1. Install Python 3.10 or newer and make sure the Windows `py` launcher is available.
-2. Right-click `windows/Install-and-Run-UniPoint.bat` and choose **Run as administrator** once.
-3. Keep the UniPoint Host console open.
-4. Put the PC and phone on the same LAN/Wi-Fi.
-5. Open UniPoint Pro. The PC should appear automatically under **PC Host**.
+2. Double-click `windows/Run-DOUPAD-Host.bat`.
+3. On the first run, Windows will ask for Administrator permission once so DOUPAD can add its private/domain firewall rules.
+4. Keep the DOUPAD Host console open while using Network PC mode.
+5. Put the PC and phone on the same LAN/Wi-Fi. The app should discover the PC automatically; QR and manual pairing remain available if a network blocks broadcast discovery.
 
-The default port is **TCP 27845**. The setup BAT creates a Windows Defender Firewall inbound rule for that port.
+The default ports are **TCP 27845** for control and **UDP 27846** for discovery.
+
+## What the Host shows
+
+The Host prints:
+
+- discovery state (`READY` or a concrete bind error);
+- one or more LAN addresses such as `192.168.1.20:27845`;
+- a `doupad://pc/...` pairing URI;
+- a terminal QR code when the small `qrcode` Python package is available.
 
 ## Protocol verification
 
-UniPoint Pro does not accept a PC merely because port 27845 is open. The Android client sends a protocol ping and requires an identity beginning with:
-
-```text
-UNIPOINT/2
-```
-
-This prevents false connections to unrelated services. The packet header is little-endian on both Android and Python host.
+DOUPAD never trusts an arbitrary open TCP port. The Android client sends a binary identity ping and accepts only DOUPAD/legacy-compatible host signatures. Current LAN discovery uses `DOUPAD_DISCOVER/3` / `DOUPAD_HOST/3`; the previous `UNIPOINT_DISCOVER/2` discovery request remains supported for beta compatibility.
 
 ## PIN
 
-The default BAT starts the host without a PIN. To run a PIN-protected host manually:
+The default launcher starts without a PIN. For PIN-protected pairing:
 
 ```bat
 cd host\python
 py unipoint_host.py --port 27845 --pin 1234
 ```
 
-The Android device picker will show `UniPoint PC (PIN)` and prompt for the PIN.
+The QR code includes the PIN and discovered PC cards show a lock indicator.
 
-## Windows dependencies
+## If a PC is not discovered
 
-No third-party input package is required on Windows. Mouse and keyboard injection use the native Win32 API through Python `ctypes`.
+1. Check the Host console says `LAN discovery: UDP 27846 (READY)`.
+2. Confirm phone and PC are on the same private LAN; guest Wi-Fi/AP isolation can intentionally block peer traffic.
+3. Scan the Host QR in DOUPAD. QR pairing bypasses broadcast discovery entirely.
+4. If QR/direct IP also fails, Windows Firewall or VPN routing is blocking TCP 27845.
+5. Saved PCs remain in the app and can be retried even while offline.
 
-## If the PC is not discovered
-
-Check these in order:
-- the host console says `Listening on 0.0.0.0:27845`;
-- phone and PC are on the same subnet/LAN (guest Wi-Fi/AP isolation can block peer traffic);
-- Windows network/firewall is not blocking inbound TCP 27845;
-- VPN software is not forcing local LAN traffic through another interface;
-- use the app's PC control panel/manual IP path if discovery is blocked by the network.
-
-
-## Zero-config PC discovery
-UniPoint Pro now discovers the Windows Host with UDP port **27846** and controls it over TCP **27845**. Run `host\windows\Install-and-Run-UniPoint.bat` as Administrator once so Windows Firewall allows both ports. The Android app also probes the last-known PC and common routed home subnets as a fallback.
+DOUPAD also uses directed broadcast, remembered endpoints, LAN TCP probing, heartbeat health checks and automatic reconnect so a short Wi-Fi interruption does not force a fresh setup.

@@ -3,9 +3,16 @@ package com.unipoint.data.repository
 import com.unipoint.data.remote.AdbDataSource
 import com.unipoint.data.remote.BluetoothHidDataSource
 import com.unipoint.data.remote.NetworkPcDataSource
+import com.unipoint.core.network.PcReconnectPolicy
 import com.unipoint.domain.model.*
 import com.unipoint.domain.repository.ConnectionRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -29,11 +36,66 @@ class ConnectionRepositoryImpl @Inject constructor(
     override val discoveredPcDevices: Flow<List<PcDevice>> = _pcDevices.asStateFlow()
 
     @Volatile private var activePcType: PcConnectionType? = null
+    private data class NetworkTarget(val ip: String, val port: Int, val pin: String?)
+    private val pcScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var lastNetworkTarget: NetworkTarget? = null
+    private var reconnectJob: Job? = null
+    private var heartbeatJob: Job? = null
+
     init {
-        network.onConnectionLost = {
-            if (activePcType == PcConnectionType.NETWORK) {
-                activePcType = null
-                _status.value = ConnectionStatus(state = ConnectionState.ERROR, errorMessage = "PC disconnected. Reconnect to continue.")
+        network.onConnectionLost = { handleNetworkLoss() }
+    }
+
+    private fun handleNetworkLoss() {
+        val target = lastNetworkTarget ?: return
+        if (activePcType != PcConnectionType.NETWORK) return
+        activePcType = null
+        heartbeatJob?.cancel()
+        _status.value = ConnectionStatus(
+            state = ConnectionState.RECONNECTING,
+            deviceName = "DOUPAD PC",
+            address = "${target.ip}:${target.port}"
+        )
+        startReconnect(target)
+    }
+
+    private fun startReconnect(target: NetworkTarget) {
+        if (reconnectJob?.isActive == true) return
+        reconnectJob = pcScope.launch {
+            for (waitMs in PcReconnectPolicy.delaysMs) {
+                delay(waitMs)
+                val result = network.connect(target.ip, target.port, target.pin)
+                if (result.isSuccess) {
+                    activePcType = PcConnectionType.NETWORK
+                    _status.value = ConnectionStatus(
+                        state = ConnectionState.CONNECTED,
+                        deviceName = "DOUPAD PC",
+                        address = "${target.ip}:${target.port}",
+                        latencyMs = network.latencyMs,
+                        connectedSince = System.currentTimeMillis()
+                    )
+                    startHeartbeat()
+                    return@launch
+                }
+            }
+            _status.value = ConnectionStatus(
+                state = ConnectionState.ERROR,
+                deviceName = "DOUPAD PC",
+                address = "${target.ip}:${target.port}",
+                errorMessage = "PC is offline or unreachable. Start DOUPAD Host, then tap the saved PC to retry."
+            )
+        }
+    }
+
+    private fun startHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = pcScope.launch {
+            while (activePcType == PcConnectionType.NETWORK && network.isConnected) {
+                delay(PcReconnectPolicy.HEARTBEAT_INTERVAL_MS)
+                if (network.ping() < 0) {
+                    handleNetworkLoss()
+                    return@launch
+                }
             }
         }
     }
@@ -67,6 +129,8 @@ class ConnectionRepositoryImpl @Inject constructor(
         val result = network.connect(ip, port, pin)
         if (result.isSuccess) {
             activePcType = PcConnectionType.NETWORK
+            lastNetworkTarget = NetworkTarget(ip, port, pin)
+            reconnectJob?.cancel()
             _status.value = ConnectionStatus(
                 state = ConnectionState.CONNECTED,
                 deviceName = "DOUPAD PC",
@@ -75,9 +139,15 @@ class ConnectionRepositoryImpl @Inject constructor(
                 connectedSince = System.currentTimeMillis()
             )
             _pcDevices.update { list ->
-                val connected = PcDevice("$ip:$port", "DOUPAD PC", "$ip:$port", PcConnectionType.NETWORK, true)
+                val previous = list.firstOrNull { it.id == "$ip:$port" }
+                val connected = (previous ?: PcDevice("$ip:$port", "DOUPAD PC", "$ip:$port", PcConnectionType.NETWORK)).copy(
+                    isConnected = true,
+                    isReachable = true,
+                    isSaved = true
+                )
                 listOf(connected) + list.filter { it.id != connected.id }.map { it.copy(isConnected = false) }
             }
+            startHeartbeat()
         } else {
             _status.value = ConnectionStatus(
                 state = ConnectionState.ERROR,
@@ -96,6 +166,9 @@ class ConnectionRepositoryImpl @Inject constructor(
     }
 
     override fun disconnectPc() {
+        reconnectJob?.cancel()
+        heartbeatJob?.cancel()
+        lastNetworkTarget = null
         bluetooth.stop()
         network.disconnect()
         activePcType = null

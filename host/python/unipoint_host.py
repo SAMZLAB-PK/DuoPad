@@ -29,7 +29,9 @@ import struct
 import sys
 import threading
 import time
-from typing import Optional
+import ipaddress
+from urllib.parse import quote
+from typing import Iterable, Optional
 
 # ---------------------------------------------------------------------------
 # Platform-specific input injection
@@ -231,13 +233,86 @@ def send_packet(sock: socket.socket, ptype: int, payload: bytes = b""):
 
 
 DISCOVERY_PORT = 27846
-DISCOVERY_REQUEST = b"UNIPOINT_DISCOVER/2"
+DISCOVERY_REQUEST = b"DOUPAD_DISCOVER/3"
+LEGACY_DISCOVERY_REQUEST = b"UNIPOINT_DISCOVER/2"
+DISCOVERY_REQUESTS = {DISCOVERY_REQUEST, LEGACY_DISCOVERY_REQUEST}
 
 
-def build_discovery_response(hostname: str, tcp_port: int, pin: Optional[str]) -> bytes:
-    safe_name = (hostname or "UniPoint PC").replace("|", "-")[:64]
+def build_identity_payload(hostname: str, pin: Optional[str]) -> bytes:
     auth = "1" if pin else "0"
-    return f"UNIPOINT_HOST/2|{safe_name}|{tcp_port}|AUTH={auth}".encode("utf-8")
+    safe_name = quote(hostname or "DOUPAD PC", safe="")
+    # Keep the legacy signature prefix so older beta clients still accept this host.
+    return f"UNIPOINT/2;AUTH={auth};NAME={safe_name}".encode("utf-8")
+
+
+def build_discovery_response(hostname: str, tcp_port: int, pin: Optional[str], legacy: bool = False) -> bytes:
+    safe_name = (hostname or "DOUPAD PC").replace("|", "-")[:64]
+    auth = "1" if pin else "0"
+    prefix = "UNIPOINT_HOST/2" if legacy else "DOUPAD_HOST/3"
+    return f"{prefix}|{safe_name}|{tcp_port}|AUTH={auth}".encode("utf-8")
+
+
+def build_pairing_uri(host: str, tcp_port: int, hostname: str, pin: Optional[str]) -> str:
+    query = [f"name={quote(hostname or 'DOUPAD PC', safe='')}"]
+    if pin:
+        query.append(f"pin={quote(pin, safe='')}")
+    return f"doupad://pc/{host}:{tcp_port}?" + "&".join(query)
+
+
+def select_lan_ipv4s(candidates: Iterable[str]):
+    result = []
+    for raw in candidates:
+        try:
+            ip = ipaddress.ip_address(raw)
+        except ValueError:
+            continue
+        if ip.version != 4 or not ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast:
+            continue
+        text = str(ip)
+        if text not in result:
+            result.append(text)
+
+    def rank(value: str):
+        if value.startswith("192.168."):
+            return (0, value)
+        if value.startswith("172."):
+            return (1, value)
+        if value.startswith("10."):
+            return (2, value)
+        return (3, value)
+
+    return sorted(result, key=rank)
+
+
+def get_lan_ipv4s():
+    candidates = []
+    try:
+        for item in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET, socket.SOCK_STREAM):
+            candidates.append(item[4][0])
+    except OSError:
+        pass
+    # UDP connect selects the OS route without sending application data.
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("8.8.8.8", 80))
+        candidates.append(probe.getsockname()[0])
+        probe.close()
+    except OSError:
+        pass
+    return select_lan_ipv4s(candidates)
+
+
+def print_pairing_qr(uri: str):
+    try:
+        import qrcode
+        qr = qrcode.QRCode(border=1)
+        qr.add_data(uri)
+        qr.make(fit=True)
+        print("\n  Scan this QR in DOUPAD:")
+        qr.print_ascii(invert=True)
+    except Exception:
+        # QR is a convenience; the pairing URI remains a reliable fallback.
+        pass
 
 
 class DiscoveryResponder(threading.Thread):
@@ -249,6 +324,8 @@ class DiscoveryResponder(threading.Thread):
         self.pin = pin
         self.udp_port = udp_port
         self._stop_event = threading.Event()
+        self.ready_event = threading.Event()
+        self.error: Optional[str] = None
         self.sock: Optional[socket.socket] = None
 
     def stop(self):
@@ -260,14 +337,20 @@ class DiscoveryResponder(threading.Thread):
                 pass
 
     def run(self):
-        hostname = socket.gethostname() or "UniPoint PC"
-        payload = build_discovery_response(hostname, self.tcp_port, self.pin)
+        hostname = socket.gethostname() or "DOUPAD PC"
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock = sock
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            sock.bind(("0.0.0.0", self.udp_port))
+            try:
+                sock.bind(("0.0.0.0", self.udp_port))
+            except OSError as exc:
+                self.error = str(exc)
+                self.ready_event.set()
+                print(f"[!] UDP discovery unavailable on {self.udp_port}: {exc}")
+                return
             sock.settimeout(0.5)
+            self.ready_event.set()
             print(f"[+] UDP discovery listening on 0.0.0.0:{self.udp_port}")
             while not self._stop_event.is_set():
                 try:
@@ -276,8 +359,12 @@ class DiscoveryResponder(threading.Thread):
                     continue
                 except OSError:
                     break
-                if data.strip() == DISCOVERY_REQUEST:
+                request = data.strip()
+                if request in DISCOVERY_REQUESTS:
                     try:
+                        payload = build_discovery_response(
+                            hostname, self.tcp_port, self.pin, legacy=(request == LEGACY_DISCOVERY_REQUEST)
+                        )
                         sock.sendto(payload, addr)
                     except OSError:
                         pass
@@ -336,8 +423,7 @@ class ClientHandler(threading.Thread):
         # Identity ping is allowed before authentication so Android can discover
         # UniPoint hosts without treating arbitrary open TCP ports as PCs.
         if ptype == 0x20:
-            auth_required = b"1" if self.pin else b"0"
-            send_packet(self.conn, 0x20, b"UNIPOINT/2;AUTH=" + auth_required)
+            send_packet(self.conn, 0x20, build_identity_payload(socket.gethostname() or "DOUPAD PC", self.pin))
             return
 
         if not self.authenticated:
@@ -383,20 +469,32 @@ def main():
     injector = InputInjector()
     discovery = DiscoveryResponder(args.port, args.pin)
     discovery.start()
+    discovery.ready_event.wait(1.5)
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((args.bind, args.port))
     server.listen(5)
 
-    print("=" * 50)
-    print("  DOUPAD Host  v2.3")
-    print(f"  Listening on {args.bind}:{args.port}")
-    print(f"  Auto-discovery UDP: {DISCOVERY_PORT}")
-    if args.pin:
-        print(f"  PIN protection: enabled")
-    print("  Press Ctrl+C to stop")
-    print("=" * 50)
+    hostname = socket.gethostname() or "DOUPAD PC"
+    lan_ips = get_lan_ipv4s()
+    print("=" * 58)
+    print("  DOUPAD Host  v3.2")
+    print(f"  TCP control:      {args.bind}:{args.port}")
+    discovery_state = "READY" if not discovery.error else f"BLOCKED: {discovery.error}"
+    print(f"  LAN discovery:    UDP {DISCOVERY_PORT} ({discovery_state})")
+    if lan_ips:
+        for ip in lan_ips:
+            print(f"  Connect address:  {ip}:{args.port}")
+    else:
+        print("  Connect address:  could not determine LAN IPv4")
+    print(f"  PIN protection:   {'enabled' if args.pin else 'off'}")
+    print("  Keep this window open while using Network PC mode.")
+    print("=" * 58)
+    if lan_ips:
+        pairing_uri = build_pairing_uri(lan_ips[0], args.port, hostname, args.pin)
+        print(f"\n  Pairing URI: {pairing_uri}")
+        print_pairing_qr(pairing_uri)
 
     try:
         while True:

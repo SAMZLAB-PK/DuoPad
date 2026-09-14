@@ -21,7 +21,7 @@ fun PcModeContent(
     onOpenGamepad: () -> Unit
 ) {
     var showIpDialog by remember { mutableStateOf(false) }
-    var ipInput by remember { mutableStateOf("192.168.10.") }
+    var ipInput by remember { mutableStateOf("") }
     var pinInput by remember { mutableStateOf("") }
 
     Column {
@@ -109,7 +109,7 @@ fun PcModeContent(
                     OutlinedTextField(
                         value = ipInput,
                         onValueChange = { ipInput = it },
-                        label = { Text("IP Address") },
+                        label = { Text("PC address") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )

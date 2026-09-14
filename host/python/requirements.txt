@@ -1,3 +1,5 @@
-# Windows uses the built-in native input backend and requires no packages.
-# Optional for macOS/Linux real input injection:
+# QR pairing shown by the DOUPAD Host console.
+qrcode>=8.0
+
+# Optional for macOS/Linux real input injection. Windows uses the built-in native backend.
 pynput>=1.7.7; platform_system != "Windows"

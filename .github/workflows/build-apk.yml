@@ -77,15 +77,15 @@ jobs:
           mkdir -p dist
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -f "$APK"
-          cp "$APK" 'dist/DOUPAD-3.1.0-realtime-debug.apk'
-          sha256sum 'dist/DOUPAD-3.1.0-realtime-debug.apk' | tee 'dist/SHA256SUMS.txt'
+          cp "$APK" 'dist/DOUPAD-3.2.0-connectivity-debug.apk'
+          sha256sum 'dist/DOUPAD-3.2.0-connectivity-debug.apk' | tee 'dist/SHA256SUMS.txt'
 
       - name: Upload DOUPAD APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DOUPAD-3.1.0-realtime-debug
+          name: DOUPAD-3.2.0-connectivity-debug
           path: |
-            dist/DOUPAD-3.1.0-realtime-debug.apk
+            dist/DOUPAD-3.2.0-connectivity-debug.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

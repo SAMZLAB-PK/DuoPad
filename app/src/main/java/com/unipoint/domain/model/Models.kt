@@ -31,7 +31,10 @@ data class PcDevice(
     val address: String,
     val type: PcConnectionType,
     val isConnected: Boolean = false,
-    val lastSeen: Long = System.currentTimeMillis()
+    val lastSeen: Long = System.currentTimeMillis(),
+    val requiresPin: Boolean = false,
+    val isSaved: Boolean = false,
+    val isReachable: Boolean = true
 )
 
 @Immutable

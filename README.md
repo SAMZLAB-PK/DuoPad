@@ -1,12 +1,8 @@
 # DOUPAD
 
-Native Android TV and PC controller, version **3.1.0 realtime beta**.
+Native Android TV + PC remote, version **3.2.0 connectivity beta**.
 
-Start with [TEST-REALTIME-3.1.0.md](TEST-REALTIME-3.1.0.md) for the current hardware test checklist and [docs/REFERENCE-APP-ANALYSIS-2026-09-14.md](docs/REFERENCE-APP-ANALYSIS-2026-09-14.md) for the PalmPoint / atvTools / AirSync technical comparison that drove this realtime-control update.
+This build focuses on public-release connectivity quality: multi-path PC discovery, saved-PC history, real QR pairing, Windows firewall setup, connection heartbeat and automatic reconnect. Android/Google TV realtime control and mirroring from 3.1.0 remain included.
 
-`TEST-THIS-BUILD.md` and older verification files are retained as historical notes for the 3.0.1 test build and do not establish validation for 3.1.0.
-
-
-## GitHub Actions build
-
-A ready-to-use workflow is included at `.github/workflows/build-apk.yml`. See `GITHUB-BUILD.md` for details.
+## PC companion
+On Windows, use `host/windows/Run-DOUPAD-Host.bat`. The first run automatically requests administrator permission once to add the DOUPAD TCP/UDP firewall rules. The host then shows its LAN address and a QR pairing code.
