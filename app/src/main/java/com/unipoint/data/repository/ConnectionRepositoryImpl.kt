@@ -12,6 +12,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,9 +42,31 @@ class ConnectionRepositoryImpl @Inject constructor(
     @Volatile private var lastNetworkTarget: NetworkTarget? = null
     private var reconnectJob: Job? = null
     private var heartbeatJob: Job? = null
+    @Volatile private var bluetoothSessionActive = false
 
     init {
         network.onConnectionLost = { handleNetworkLoss() }
+        pcScope.launch {
+            bluetooth.isConnected.collect { connected ->
+                if (!bluetoothSessionActive) return@collect
+                if (connected) {
+                    activePcType = PcConnectionType.BLUETOOTH_HID
+                    _status.value = ConnectionStatus(
+                        state = ConnectionState.CONNECTED,
+                        deviceName = bluetooth.connectedDeviceName.value ?: "Bluetooth PC",
+                        address = "Bluetooth Direct",
+                        connectedSince = System.currentTimeMillis()
+                    )
+                } else {
+                    activePcType = PcConnectionType.BLUETOOTH_HID
+                    _status.value = ConnectionStatus(
+                        state = ConnectionState.CONNECTING,
+                        deviceName = "Bluetooth Direct",
+                        address = "Waiting for PC to pair/connect"
+                    )
+                }
+            }
+        }
     }
 
     private fun handleNetworkLoss() {
@@ -101,19 +124,30 @@ class ConnectionRepositoryImpl @Inject constructor(
     }
 
     override suspend fun connectBluetoothHid(): Result<Unit> {
-        _status.value = ConnectionStatus(state = ConnectionState.CONNECTING, deviceName = "Bluetooth HID")
+        disconnectAll()
+        bluetoothSessionActive = true
+        activePcType = PcConnectionType.BLUETOOTH_HID
+        _status.value = ConnectionStatus(
+            state = ConnectionState.CONNECTING,
+            deviceName = "Bluetooth Direct",
+            address = "Waiting for PC to pair/connect"
+        )
         val result = bluetooth.start()
-        if (result.isSuccess) {
+        if (result.isFailure) {
+            bluetoothSessionActive = false
+            activePcType = null
+            _status.value = ConnectionStatus(
+                state = ConnectionState.ERROR,
+                deviceName = "Bluetooth Direct",
+                errorMessage = result.exceptionOrNull()?.message
+            )
+        } else if (bluetooth.isConnected.value) {
             activePcType = PcConnectionType.BLUETOOTH_HID
             _status.value = ConnectionStatus(
                 state = ConnectionState.CONNECTED,
-                deviceName = bluetooth.connectedDeviceName.value ?: "Bluetooth Device",
+                deviceName = bluetooth.connectedDeviceName.value ?: "Bluetooth PC",
+                address = "Bluetooth Direct",
                 connectedSince = System.currentTimeMillis()
-            )
-        } else {
-            _status.value = ConnectionStatus(
-                state = ConnectionState.ERROR,
-                errorMessage = result.exceptionOrNull()?.message
             )
         }
         return result
@@ -169,6 +203,7 @@ class ConnectionRepositoryImpl @Inject constructor(
         reconnectJob?.cancel()
         heartbeatJob?.cancel()
         lastNetworkTarget = null
+        bluetoothSessionActive = false
         bluetooth.stop()
         network.disconnect()
         activePcType = null

@@ -15,13 +15,14 @@ android {
         applicationId = "com.samz.doupad"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "3.2.0-connectivity"
+        versionCode = 10
+        versionName = "4.0.0-android-engine"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
         buildConfigField("String", "PC_DEFAULT_PORT", "\"27845\"")
         buildConfigField("String", "ADB_DEFAULT_PORT", "\"5555\"")
+        buildConfigField("String", "HOST_RELEASES_URL", "\"https://github.com/SAMZLAB-PK/DuoPad/releases\"")
     }
 
     buildTypes {

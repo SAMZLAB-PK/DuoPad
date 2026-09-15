@@ -46,6 +46,9 @@ class AdbDataSource constructor(
     @Volatile private var realtimeControl: AdbStream? = null
     @Volatile private var realtimeServer: AdbStream? = null
     @Volatile private var realtimeRetryAfterMs: Long = 0L
+    @Volatile private var uhidMouseReady: Boolean = false
+    @Volatile private var uhidLastX: Int = 960
+    @Volatile private var uhidLastY: Int = 540
     @Volatile private var displayWidth: Int = 1920
     @Volatile private var displayHeight: Int = 1080
     private val appDetailsCache = ConcurrentHashMap<String, InstalledApp>()
@@ -161,9 +164,12 @@ class AdbDataSource constructor(
                     priorityJobs.awaitAll().flatten().forEach { d ->
                         if (found.none { it.id == d.id }) found.add(d)
                     }
-                    // Rest of subnet (.6-.49 skip already done priority)
-                    val rest = (6..40).filter { it !in priorityEnds }
-                    rest.chunked(8).forEach { chunk ->
+                    // Primary LAN gets a complete /24 sweep so TV boxes at arbitrary DHCP
+                    // addresses (for example .149 or .219) are discoverable. Fallback
+                    // subnets stay bounded so a disconnected phone does not scan forever.
+                    val rest = (if (subnet == primary) (1..254) else (6..40))
+                        .filter { it !in priorityEnds }
+                    rest.chunked(if (subnet == primary) 24 else 8).forEach { chunk ->
                         val jobs = chunk.map { end ->
                             async {
                                 ports.mapNotNull { port -> probeDevice("$subnet.$end", port) }
@@ -243,7 +249,17 @@ class AdbDataSource constructor(
     }
 
     private fun closeRealtimeControl() {
-        runCatching { realtimeControl?.close() }
+        val stream = realtimeControl
+        if (uhidMouseReady && stream != null) {
+            runCatching {
+                stream.sink.write(ScrcpyControlProtocol.uhidDestroy())
+                stream.sink.flush()
+            }
+        }
+        uhidMouseReady = false
+        uhidLastX = displayWidth / 2
+        uhidLastY = displayHeight / 2
+        runCatching { stream?.close() }
         runCatching { realtimeServer?.close() }
         realtimeControl = null
         realtimeServer = null
@@ -284,11 +300,104 @@ class AdbDataSource constructor(
             val ready = stream ?: throw lastError ?: Exception("scrcpy control socket unavailable")
             realtimeControl = ready
             realtimeRetryAfterMs = 0L
+            uhidMouseReady = false
             Result.success(ready)
         } catch (e: Exception) {
             closeRealtimeControl()
             realtimeRetryAfterMs = System.nanoTime() / 1_000_000L + 2_500L
             Result.failure(Exception("Realtime input unavailable: ${e.message}", e))
+        }
+    }
+
+    private fun ensureUhidMouseLocked(stream: AdbStream): Result<Unit> = try {
+        if (!uhidMouseReady) {
+            stream.sink.write(ScrcpyControlProtocol.uhidCreate())
+            stream.sink.flush()
+            uhidMouseReady = true
+            uhidLastX = displayWidth / 2
+            uhidLastY = displayHeight / 2
+        }
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(Exception("UHID mouse unavailable: ${e.message}", e))
+    }
+
+    private fun writeUhidMoveLocked(
+        stream: AdbStream,
+        targetX: Int,
+        targetY: Int,
+        buttons: Int = 0
+    ) {
+        var dx = targetX - uhidLastX
+        var dy = targetY - uhidLastY
+        if (dx == 0 && dy == 0) {
+            stream.sink.write(
+                ScrcpyControlProtocol.uhidInput(
+                    data = ScrcpyControlProtocol.mouseReport(buttons = buttons)
+                )
+            )
+        } else {
+            while (dx != 0 || dy != 0) {
+                val stepX = dx.coerceIn(-127, 127)
+                val stepY = dy.coerceIn(-127, 127)
+                stream.sink.write(
+                    ScrcpyControlProtocol.uhidInput(
+                        data = ScrcpyControlProtocol.mouseReport(
+                            buttons = buttons, dx = stepX, dy = stepY
+                        )
+                    )
+                )
+                dx -= stepX
+                dy -= stepY
+            }
+        }
+        uhidLastX = targetX
+        uhidLastY = targetY
+    }
+
+    private suspend fun sendUhidMouse(
+        x: Int,
+        y: Int,
+        buttons: Int = 0,
+        click: Boolean = false,
+        wheel: Int = 0,
+        horizontalScroll: Int = 0
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        controlMutex.withLock {
+            val stream = startRealtimeControlLocked().getOrElse { return@withLock Result.failure(it) }
+            ensureUhidMouseLocked(stream).getOrElse {
+                closeRealtimeControl()
+                return@withLock Result.failure(it)
+            }
+            try {
+                writeUhidMoveLocked(stream, x, y)
+                if (click) {
+                    stream.sink.write(
+                        ScrcpyControlProtocol.uhidInput(
+                            data = ScrcpyControlProtocol.mouseReport(buttons = buttons)
+                        )
+                    )
+                    stream.sink.write(
+                        ScrcpyControlProtocol.uhidInput(
+                            data = ScrcpyControlProtocol.mouseReport(buttons = 0)
+                        )
+                    )
+                } else if (wheel != 0 || horizontalScroll != 0) {
+                    stream.sink.write(
+                        ScrcpyControlProtocol.uhidInput(
+                            data = ScrcpyControlProtocol.mouseReport(
+                                wheel = wheel, horizontalScroll = horizontalScroll
+                            )
+                        )
+                    )
+                }
+                stream.sink.flush()
+                Result.success(Unit)
+            } catch (e: Exception) {
+                closeRealtimeControl()
+                realtimeRetryAfterMs = System.nanoTime() / 1_000_000L + 750L
+                Result.failure(Exception("UHID mouse lost: ${e.message}", e))
+            }
         }
     }
 
@@ -308,10 +417,19 @@ class AdbDataSource constructor(
     }
 
     suspend fun prepareRealtimeInput(): Result<Unit> = withContext(Dispatchers.IO) {
-        controlMutex.withLock { startRealtimeControlLocked().map { Unit } }
+        controlMutex.withLock {
+            val stream = startRealtimeControlLocked().getOrElse { return@withLock Result.failure(it) }
+            // Creating the UHID mouse makes Android TV expose a real system pointer arrow.
+            ensureUhidMouseLocked(stream)
+        }
     }
 
     suspend fun pointerMove(x: Int, y: Int, screenWidth: Int, screenHeight: Int): Result<Unit> {
+        displayWidth = screenWidth
+        displayHeight = screenHeight
+        val uhid = sendUhidMouse(x, y)
+        if (uhid.isSuccess) return uhid
+
         val direct = sendRealtime(
             ScrcpyControlProtocol.touch(
                 action = ScrcpyControlProtocol.ACTION_MOVE,
@@ -329,11 +447,16 @@ class AdbDataSource constructor(
     suspend fun pointerClick(
         x: Int, y: Int, screenWidth: Int, screenHeight: Int, button: MouseButton
     ): Result<Unit> {
+        displayWidth = screenWidth
+        displayHeight = screenHeight
         val flag = when (button) {
             MouseButton.LEFT -> ScrcpyControlProtocol.BUTTON_PRIMARY
             MouseButton.RIGHT -> ScrcpyControlProtocol.BUTTON_SECONDARY
             MouseButton.MIDDLE -> ScrcpyControlProtocol.BUTTON_TERTIARY
         }
+        val uhid = sendUhidMouse(x, y, buttons = flag, click = true)
+        if (uhid.isSuccess) return uhid
+
         val bytes = ScrcpyControlProtocol.touch(
             ScrcpyControlProtocol.ACTION_DOWN, ScrcpyControlProtocol.POINTER_ID_MOUSE,
             x, y, screenWidth, screenHeight, 1f, flag, flag
@@ -353,6 +476,21 @@ class AdbDataSource constructor(
     suspend fun pointerScroll(
         x: Int, y: Int, screenWidth: Int, screenHeight: Int, hScroll: Float, vScroll: Float
     ): Result<Unit> {
+        displayWidth = screenWidth
+        displayHeight = screenHeight
+        val wheel = when {
+            vScroll > 0f -> 1
+            vScroll < 0f -> -1
+            else -> 0
+        }
+        val horizontal = when {
+            hScroll > 0f -> 1
+            hScroll < 0f -> -1
+            else -> 0
+        }
+        val uhid = sendUhidMouse(x, y, wheel = wheel, horizontalScroll = horizontal)
+        if (uhid.isSuccess) return uhid
+
         val direct = sendRealtime(
             ScrcpyControlProtocol.scroll(
                 x, y, screenWidth, screenHeight,
@@ -606,22 +744,46 @@ class AdbDataSource constructor(
         }
     }
 
+    private fun isPng(bytes: ByteArray): Boolean {
+        val signature = byteArrayOf(
+            0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
+        )
+        return bytes.size > 100 && bytes.copyOfRange(0, signature.size).contentEquals(signature)
+    }
+
     suspend fun screenshot(localPath: String): Result<Unit> = withContext(Dispatchers.IO) {
         adbMutex.withLock {
             val d = dadb ?: return@withLock Result.failure(Exception("Not connected"))
-            val remote = "/sdcard/.unipoint_${System.currentTimeMillis()}.png"
             val target = File(localPath).apply { parentFile?.mkdirs(); delete() }
+
+            // Fast path: stream PNG bytes directly over ADB. This avoids /sdcard permission,
+            // sync and pull quirks seen on some Android TV boxes.
+            try {
+                val stream = d.open("shell:screencap -p")
+                val bytes = try { stream.source.readByteArray() } finally { stream.close() }
+                if (isPng(bytes)) {
+                    target.writeBytes(bytes)
+                    return@withLock Result.success(Unit)
+                }
+            } catch (e: Exception) {
+                Log.w(tag, "Direct screenshot failed; trying file fallback: ${e.message}")
+            }
+
+            val remote = "/sdcard/.doupad_${System.currentTimeMillis()}.png"
             try {
                 val capture = d.shell("screencap -p '$remote' && sync")
-                if (capture.exitCode != 0) return@withLock Result.failure(Exception(capture.allOutput.ifBlank { "screencap failed" }))
+                if (capture.exitCode != 0) {
+                    return@withLock Result.failure(Exception(capture.allOutput.ifBlank { "screencap failed" }))
+                }
                 d.pull(target, remote)
-                try { d.shell("rm -f '$remote'") } catch (_: Exception) {}
-                if (!target.exists() || target.length() < 100) {
+                runCatching { d.shell("rm -f '$remote'") }
+                val bytes = if (target.exists()) target.readBytes() else ByteArray(0)
+                if (!isPng(bytes)) {
                     target.delete()
-                    Result.failure(Exception("Screenshot returned no image"))
+                    Result.failure(Exception("Screenshot returned no valid PNG image"))
                 } else Result.success(Unit)
             } catch (e: Exception) {
-                try { d.shell("rm -f '$remote'") } catch (_: Exception) {}
+                runCatching { d.shell("rm -f '$remote'") }
                 target.delete()
                 Result.failure(e)
             }

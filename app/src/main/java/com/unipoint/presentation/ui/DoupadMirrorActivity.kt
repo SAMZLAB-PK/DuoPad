@@ -1,14 +1,21 @@
 package com.unipoint.presentation.ui
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Color
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.widget.LinearLayout
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.widget.FrameLayout
 import android.widget.TextView
 import com.unipoint.core.util.MirrorCoordinateMapper
 import com.unipoint.data.remote.ScrcpyControlProtocol
@@ -22,6 +29,7 @@ import kotlin.concurrent.thread
 
 /** Low-latency scrcpy 3.3.1 video + direct touch client. Each surface owns its session. */
 class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
+    private lateinit var root: FrameLayout
     private lateinit var surface: SurfaceView
     private lateinit var status: TextView
     private val generation = AtomicInteger()
@@ -50,15 +58,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.BLACK)
-        }
-        status = TextView(this).apply {
-            text = "Connecting live mirror… · Back to close"
-            setTextColor(Color.WHITE)
-            setPadding(24, 20, 24, 20)
-        }
+        enterImmersive()
+
+        root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         surface = SurfaceView(this).apply {
             isFocusable = true
             isFocusableInTouchMode = true
@@ -67,14 +69,86 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 true
             }
         }
-        layout.addView(status)
-        layout.addView(surface, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(layout)
+        status = TextView(this).apply {
+            text = "Connecting live mirror… · Back to close"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(0x99000000.toInt())
+            setPadding(24, 20, 24, 20)
+        }
+        root.addView(
+            surface,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER
+            )
+        )
+        root.addView(
+            status,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP
+            )
+        )
+        setContentView(root)
         surface.holder.addCallback(this)
     }
 
+    private fun enterImmersive() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.let { controller ->
+                controller.hide(WindowInsets.Type.systemBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enterImmersive()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        enterImmersive()
+        session?.let { current ->
+            if (current.displayWidth > 0 && current.displayHeight > 0) {
+                root.post { fitSurface(current.displayWidth, current.displayHeight) }
+            }
+        }
+    }
+
     private fun show(ticket: Int, message: String) = runOnUiThread {
-        if (generation.get() == ticket) status.text = message
+        if (generation.get() == ticket) {
+            status.visibility = View.VISIBLE
+            status.text = message
+        }
+    }
+
+    private fun fitSurface(videoWidth: Int, videoHeight: Int) {
+        val availableW = root.width
+        val availableH = root.height
+        if (availableW <= 0 || availableH <= 0 || videoWidth <= 0 || videoHeight <= 0) return
+        val scale = minOf(
+            availableW.toFloat() / videoWidth.toFloat(),
+            availableH.toFloat() / videoHeight.toFloat()
+        )
+        surface.layoutParams = FrameLayout.LayoutParams(
+            (videoWidth * scale).toInt().coerceAtLeast(1),
+            (videoHeight * scale).toInt().coerceAtLeast(1),
+            Gravity.CENTER
+        )
     }
 
     private fun sendTouch(event: MotionEvent) {
@@ -126,7 +200,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         worker.execute { stream(holder, ticket) }
     }
 
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        session?.let { current ->
+            if (current.displayWidth > 0 && current.displayHeight > 0) {
+                fitSurface(current.displayWidth, current.displayHeight)
+            }
+        }
+    }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         generation.incrementAndGet()
@@ -167,7 +247,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 "CLASSPATH=/data/local/tmp/doupad-mirror.jar app_process / com.genymobile.scrcpy.Server 3.3.1 " +
                     "scid=$id log_level=warn video=true audio=false control=true tunnel_forward=true " +
                     "send_dummy_byte=false send_device_meta=false send_codec_meta=true send_frame_meta=true " +
-                    "video_codec=h264 max_size=1280 max_fps=60 video_bit_rate=8000000 cleanup=true"
+                    "video_codec=h264 max_size=1280 max_fps=30 video_bit_rate=4000000 cleanup=true"
             current.server = adb.open("shell:$command")
 
             for (attempt in 0 until 30) {
@@ -204,31 +284,27 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             current.displayWidth = width
             current.displayHeight = height
 
-            val codec = MediaCodec.createDecoderByType("video/avc")
-            current.codec = codec
-            codec.configure(MediaFormat.createVideoFormat("video/avc", width, height), holder.surface, null, 0)
-            codec.start()
-            show(ticket, "Live · $width × $height · 60 fps target · Touch enabled")
-
             runOnUiThread {
                 if (generation.get() == ticket) {
-                    val parent = surface.parent as LinearLayout
-                    parent.post {
+                    requestedOrientation = if (width >= height) {
+                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    } else {
+                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                    }
+                    enterImmersive()
+                    root.post {
                         if (generation.get() == ticket) {
-                            val availableW = parent.width
-                            val availableH = parent.height - status.height
-                            val scale = minOf(
-                                availableW.toFloat() / width,
-                                availableH.toFloat() / height
-                            )
-                            surface.layoutParams = LinearLayout.LayoutParams(
-                                (width * scale).toInt(),
-                                (height * scale).toInt()
-                            ).apply { gravity = android.view.Gravity.CENTER_HORIZONTAL }
+                            fitSurface(width, height)
+                            status.visibility = View.GONE
                         }
                     }
                 }
             }
+
+            val codec = MediaCodec.createDecoderByType("video/avc")
+            current.codec = codec
+            codec.configure(MediaFormat.createVideoFormat("video/avc", width, height), holder.surface, null, 0)
+            codec.start()
 
             drain = thread(name = "doupad-video-output") {
                 val info = MediaCodec.BufferInfo()

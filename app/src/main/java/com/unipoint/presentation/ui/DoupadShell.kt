@@ -1,6 +1,11 @@
 package com.unipoint.presentation.ui
 
+import android.Manifest
+import android.bluetooth.BluetoothAdapter
 import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.graphics.BitmapFactory
 import android.speech.RecognizerIntent
 import android.content.Intent
@@ -32,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.ContextCompat
+import com.unipoint.BuildConfig
 import com.unipoint.domain.model.*
 import com.unipoint.presentation.viewmodel.MainViewModel
 import com.unipoint.presentation.ui.screens.android.*
@@ -73,12 +80,48 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     var port by remember { mutableStateOf("5555") }
     var pin by remember { mutableStateOf("") }
     var pc by remember { mutableStateOf(false) }
+    var pcTransport by rememberSaveable { mutableStateOf("bluetooth") }
     var localError by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("All") }
     var targets by remember { mutableStateOf(readTargets(context)) }
     val status=state.connectionStatus
     val connected=status.state==ConnectionState.CONNECTED
     fun message(text:String){scope.launch { snack.showSnackbar(text) }}
+    val discoverableLauncher=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    val bluetoothPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if(grants.values.all { it }) {
+            vm.switchMode(AppMode.PC)
+            vm.connectBluetooth()
+            runCatching {
+                discoverableLauncher.launch(
+                    Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                        .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION,180)
+                )
+            }
+            dialog=null
+            message("Bluetooth Direct is ready. On the PC, open Bluetooth settings and pair with this phone.")
+        } else message("Bluetooth permission is required for Direct mode.")
+    }
+    fun startBluetoothDirect() {
+        val permissions=if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S) arrayOf(
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_ADVERTISE
+        ) else emptyArray()
+        val missing=permissions.filter { ContextCompat.checkSelfPermission(context,it)!=PackageManager.PERMISSION_GRANTED }
+        if(missing.isNotEmpty()) bluetoothPermissionLauncher.launch(missing.toTypedArray()) else {
+            vm.switchMode(AppMode.PC)
+            vm.connectBluetooth()
+            runCatching {
+                discoverableLauncher.launch(
+                    Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                        .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION,180)
+                )
+            }
+            dialog=null
+            message("Bluetooth Direct is ready. On the PC, open Bluetooth settings and pair with this phone.")
+        }
+    }
     fun requireDevice():Boolean { if(!connected){dialog="connect";message("Connect your TV or PC first.")};return connected }
     fun requireTv():Boolean { if(!requireDevice())return false; if(state.mode!=AppMode.ANDROID){message("This tool requires an Android TV connection.");return false};return true }
     fun key(code:Int) { if(!requireDevice())return; if(state.mode==AppMode.ANDROID)vm.executeAdb(AdbCommand.InputKey(code)) else { val hid=when(code){19->82;20->81;21->80;22->79;23,66->40;4->41;3->74;else->{message("This button is available for Android TV only.");return}};vm.sendKey(hid,true);vm.sendKey(hid,false) } }
@@ -89,9 +132,12 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     }
     LaunchedEffect(status.state,status.address) { if(connected) {
         val target=Target(status.deviceName?:status.address?:"Device",status.address?:"",state.mode==AppMode.PC)
-        if(target.endpoint.isNotBlank()){targets=listOf(target)+targets.filterNot { it.endpoint==target.endpoint };saveTargets(context,targets)}
+        if(target.endpoint.isNotBlank() && ":" in target.endpoint){targets=listOf(target)+targets.filterNot { it.endpoint==target.endpoint };saveTargets(context,targets)}
     } }
     LaunchedEffect(state.snackbarMessage) { state.snackbarMessage?.let { snack.showSnackbar(it);vm.clearSnackbar() } }
+    LaunchedEffect(dialog,pc,pcTransport) {
+        if(dialog=="connect" && pc && pcTransport=="wifi") vm.scanPc()
+    }
     BackHandler(detail!=null||page!=0||dialog!=null){if(dialog!=null)dialog=null else if(detail!=null)detail=null else page=0}
     val back={detail=null}
     when(detail) {
@@ -115,12 +161,12 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     Title("Your devices","Control all your screens from one place.")
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){listOf("All","TV","PC").forEach{label->FilterChip(selected=filter==label,onClick={filter=label},label={Text(label)},shape=CircleShape,colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Teal,selectedLabelColor=Color.White))}}
                     val visible=targets.filter {filter=="All"||(filter=="PC")==it.pc}
-                    if(visible.isEmpty()) Surface(shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,Border),color=Color.White){Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)){Icon(Icons.Default.Devices,null,Modifier.size(48.dp),tint=Teal);Text("Your first connection starts here",fontWeight=FontWeight.SemiBold);Text("Add a TV or PC on your Wi-Fi.\nYour saved devices will appear here.",fontSize=13.sp,color=Muted);Button(onClick={dialog="connect"},colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Add your device")}}}
+                    if(visible.isEmpty()) Surface(shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,Border),color=Color.White){Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)){Icon(Icons.Default.Devices,null,Modifier.size(48.dp),tint=Teal);Text("Your first connection starts here",fontWeight=FontWeight.SemiBold);Text("Add a TV or PC over Wi-Fi or Bluetooth.\nYour saved devices will appear here.",fontSize=13.sp,color=Muted);Button(onClick={dialog="connect"},colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Add your device")}}}
                     visible.forEach { target->val live=connected&&status.address==target.endpoint;Surface(onClick={open(target)},shape=RoundedCornerShape(17.dp),color=if(live)Color(0xFFEFFAFA) else Color.White,border=BorderStroke(1.dp,if(live)Teal else Border)){Row(Modifier.fillMaxWidth().padding(17.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)){Surface(shape=RoundedCornerShape(10.dp),color=Pale){Icon(if(target.pc)Icons.Default.Computer else Icons.Default.Tv,null,Modifier.padding(13.dp).size(47.dp),tint=Teal)};Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)){Text(target.name,fontSize=15.sp,fontWeight=FontWeight.Bold);Text(target.endpoint,fontSize=11.sp,color=Muted);Text(if(live)"● Connected" else "● Saved",fontSize=11.sp,color=if(live)Teal else Muted)};Icon(Icons.Default.ChevronRight,null,tint=Muted)}}}
                     OutlinedButton(onClick={dialog="connect"},modifier=Modifier.fillMaxWidth().height(76.dp),shape=RoundedCornerShape(15.dp),border=BorderStroke(1.dp,Border)){Icon(Icons.Default.AddCircleOutline,null,tint=Teal);Spacer(Modifier.width(12.dp));Column{Text("Add device",color=Ink,fontWeight=FontWeight.SemiBold);Text("Connect a new TV or PC",fontSize=11.sp,color=Muted)}}
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Quick actions",fontWeight=FontWeight.Bold,fontSize=17.sp);IconButton(onClick={vm.scanAndroid();dialog="scan"}){Icon(Icons.Default.Radar,"Find TV",tint=Teal)}}
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Quick("Remote",Icons.Default.SettingsRemote,Modifier.weight(1f)){page=1};Quick("Mirror",Icons.Default.ScreenShare,Modifier.weight(1f)){page=2};Quick("Send files",Icons.AutoMirrored.Filled.Send,Modifier.weight(1f)){if(requireTv())detail="files"};Quick("Install APK",Icons.Default.InstallMobile,Modifier.weight(1f)){if(requireTv())detail="apps"}}
-                    Hint("Keep your phone and device on the same Wi-Fi network.")
+                    Hint("Bluetooth Direct needs no PC app. Wi-Fi control uses DOUPAD Host on the same network.")
                 }
                 1->{
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){IconButton(onClick={page=0}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Home")};Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){Text(if(connected)status.deviceName?:"Remote control" else "Remote control",fontSize=18.sp,fontWeight=FontWeight.Bold);Text(if(connected)"● Connected" else "Choose a device to start",fontSize=11.sp,color=if(connected)Teal else Muted)};IconButton(onClick={dialog="settings"}){Icon(Icons.Default.MoreVert,"Device options")}}
@@ -184,11 +230,78 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Color.White,title={Text(when(dialog){"connect"->"Add a device";"keyboard"->"Keyboard";"settings"->"DOUPAD";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
             when(dialog){
-                "connect"->{Row{FilterChip(selected=!pc,onClick={pc=false;port="5555"},label={Text("Android TV")});Spacer(Modifier.width(8.dp));FilterChip(selected=pc,onClick={pc=true;port="27845"},label={Text("Windows PC")})};OutlinedTextField(ip,{ip=it},label={Text("IP address")},singleLine=true);OutlinedTextField(port,{port=it.filter(Char::isDigit)},label={Text("Port")},singleLine=true);if(pc)OutlinedTextField(pin,{pin=it},label={Text("Host pairing PIN")},singleLine=true);Text(if(pc)"Start the included DOUPAD PC host. Use its displayed IP, port and PIN." else "Enable network/USB debugging and accept the authorization prompt on your TV. Pairing-code TLS is not supported.",fontSize=12.sp,color=Muted);if(localError.isNotBlank())Text(localError,color=MaterialTheme.colorScheme.error);if(status.state==ConnectionState.CONNECTING)LinearProgressIndicator(Modifier.fillMaxWidth())}
+                "connect"->{
+                    Row{
+                        FilterChip(selected=!pc,onClick={pc=false;port="5555"},label={Text("Android TV")})
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(selected=pc,onClick={pc=true;port="27845"},label={Text("PC")})
+                    }
+                    if(!pc) {
+                        OutlinedTextField(ip,{ip=it},label={Text("IP address")},singleLine=true)
+                        OutlinedTextField(port,{port=it.filter(Char::isDigit)},label={Text("Port")},singleLine=true)
+                        Text("Enable network/USB debugging and accept the authorization prompt on your TV. Pairing-code TLS is not supported.",fontSize=12.sp,color=Muted)
+                    } else {
+                        Text("Choose how you want to connect",fontWeight=FontWeight.SemiBold)
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected=pcTransport=="bluetooth",onClick={pcTransport="bluetooth"},label={Text("Bluetooth Direct")})
+                            FilterChip(selected=pcTransport=="wifi",onClick={pcTransport="wifi"},label={Text("Wi-Fi")})
+                        }
+                        if(pcTransport=="bluetooth") {
+                            Surface(shape=RoundedCornerShape(14.dp),color=Color(0xFFEFFAFA),border=BorderStroke(1.dp,Teal.copy(alpha=.35f))) {
+                                Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                                        Icon(Icons.Default.Bluetooth,null,tint=Teal)
+                                        Column { Text("Bluetooth Direct",fontWeight=FontWeight.Bold);Text("No PC app required",fontSize=12.sp,color=Teal) }
+                                    }
+                                    Text("Pair this phone from Windows, macOS or Linux Bluetooth settings. DOUPAD acts as a mouse + keyboard.",fontSize=12.sp,color=Muted)
+                                    Button(onClick={startBluetoothDirect()},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Start Bluetooth Direct")}
+                                }
+                            }
+                        } else {
+                            if(state.isScanningPc) {
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                                Text("Looking for DOUPAD Host on your network…",fontSize=12.sp,color=Muted)
+                            }
+                            state.pcDevices.take(6).forEach { host ->
+                                OutlinedButton(onClick={
+                                    val h=host.address.substringBefore(':')
+                                    val p=host.address.substringAfter(':',"27845").toIntOrNull()?:27845
+                                    ip=h;port=p.toString()
+                                    if(host.requiresPin) pin="" else { vm.connectNetwork(h,p,null);dialog=null }
+                                },modifier=Modifier.fillMaxWidth()) {
+                                    Icon(Icons.Default.Computer,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp))
+                                    Column(Modifier.weight(1f)) { Text(host.name,maxLines=1);Text(host.address+if(host.isReachable)" · Online" else " · Saved",fontSize=11.sp,color=Muted) }
+                                }
+                            }
+                            if(!state.isScanningPc && state.pcDevices.none { it.isReachable }) {
+                                Surface(shape=RoundedCornerShape(14.dp),color=Pale,border=BorderStroke(1.dp,Border)) {
+                                    Column(Modifier.fillMaxWidth().padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                        Text("DOUPAD Host required for Wi-Fi",fontWeight=FontWeight.Bold)
+                                        Text("Bluetooth Direct works without any PC software. For Wi-Fi control, run the small DOUPAD Host on Windows, macOS or Linux.",fontSize=12.sp,color=Muted)
+                                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(onClick={vm.scanPc()},modifier=Modifier.weight(1f)){Text("Scan again")}
+                                            Button(onClick={
+                                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.HOST_RELEASES_URL))) }
+                                                    .onFailure { message("Could not open the DOUPAD Host download page.") }
+                                            },modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Get Host")}
+                                        }
+                                        TextButton(onClick={pcTransport="bluetooth"},modifier=Modifier.fillMaxWidth()){Text("Use Bluetooth Direct instead")}
+                                    }
+                                }
+                            }
+                            Text("Manual Wi-Fi connection",fontWeight=FontWeight.SemiBold)
+                            OutlinedTextField(ip,{ip=it},label={Text("PC IP address")},singleLine=true)
+                            OutlinedTextField(port,{port=it.filter(Char::isDigit)},label={Text("Port")},singleLine=true)
+                            OutlinedTextField(pin,{pin=it},label={Text("Host pairing PIN (optional)")},singleLine=true)
+                        }
+                    }
+                    if(localError.isNotBlank())Text(localError,color=MaterialTheme.colorScheme.error)
+                    if(status.state==ConnectionState.CONNECTING)LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
                 "scan"->{if(state.isScanning)LinearProgressIndicator(Modifier.fillMaxWidth());state.androidDevices.forEach{d->TextButton(onClick={ip=d.ip;port=d.port.toString();pc=false;dialog="connect"}){Text("${d.name}\n${d.ip}:${d.port}")}};if(!state.isScanning&&state.androidDevices.isEmpty())Text("No TVs found. Check network debugging or enter the IP manually.")}
                 "keyboard"->{OutlinedTextField(command,{command=it},label={Text("Text to send")});Text("Focus a text field on your device first.",fontSize=12.sp,color=Muted)}
                 "shell"->{OutlinedTextField(command,{command=it},label={Text("ADB command")});Button(onClick={scope.launch{output="Running…";output=vm.executeAdbAwait(command)}}){Text("Run")};if(output.isNotBlank())Text(output,fontSize=12.sp)}
-                "settings"->{Text("DOUPAD 3.1.0 · Realtime control beta");Text("White / teal theme • No demo connected devices.",fontSize=12.sp);if(connected)TextButton(onClick={vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
+                "settings"->{Text("DOUPAD 3.3.0 · Public connectivity test");Text("White / teal theme • No demo connected devices.",fontSize=12.sp);if(connected)TextButton(onClick={vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
                 "power"->{listOf("Sleep" to "input keyevent 223","Wake" to "input keyevent 224","Restart" to "reboot","Power off" to "reboot -p").forEach{(label,cmd)->OutlinedButton(onClick={command=cmd;dialog="Confirm power action"},modifier=Modifier.fillMaxWidth()){Text(label)}}}
                 "Confirm power action"->Text("Run '$command' on ${status.deviceName}? Restart/shutdown disconnects the device.")
                 "gamepad"->{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("A" to 96,"B" to 97,"X" to 99,"Y" to 100).forEach{(label,code)->OutlinedButton(onClick={key(code)},contentPadding=PaddingValues(12.dp)){Text(label)}}};Pad(::key);Text("Key-based game controls; compatibility depends on the game.",fontSize=11.sp,color=Muted)}
@@ -200,12 +313,19 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         }
     },confirmButton={TextButton(onClick={
         when(dialog){
-            "connect"->{val p=port.toIntOrNull();if(ip.isBlank()||ip.contains(Regex("[\\s/:]"))||p==null||p !in 1..65535){localError="Enter a valid host and port."}else{localError="";if(pc)vm.connectNetwork(ip,p,pin.ifBlank{null}) else vm.connectAndroidIp("$ip:$p");dialog=null}}
+            "connect"->{
+                if(pc && pcTransport=="bluetooth") startBluetoothDirect()
+                else {
+                    val p=port.toIntOrNull()
+                    if(ip.isBlank()||ip.contains(Regex("[\s/:]"))||p==null||p !in 1..65535) localError="Enter a valid host and port."
+                    else { localError="";if(pc)vm.connectNetwork(ip,p,pin.ifBlank{null}) else vm.connectAndroidIp("$ip:$p");dialog=null }
+                }
+            }
             "keyboard"->{if(state.mode==AppMode.ANDROID)vm.executeAdb(AdbCommand.InputText(command)) else vm.sendText(command);dialog=null}
             "Confirm power action"->{showCommand("Power result",command)}
             else->dialog=null
         }
-    }){Text(when(dialog){"connect"->"Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
+    }){Text(when(dialog){"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
 }
 
 @Composable private fun Title(title:String,subtitle:String){Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink,letterSpacing=(-0.6).sp);Text(subtitle,fontSize=13.sp,color=Muted)}}

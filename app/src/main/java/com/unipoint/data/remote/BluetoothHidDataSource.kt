@@ -14,6 +14,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.unipoint.core.bluetooth.BluetoothHidReports
 import com.unipoint.core.util.HidKeycodes
 import com.unipoint.domain.model.InputEvent
 import com.unipoint.domain.model.MouseButton
@@ -38,16 +39,8 @@ class BluetoothHidDataSource @Inject constructor(
     private val _connectedDeviceName = MutableStateFlow<String?>(null)
     val connectedDeviceName: StateFlow<String?> = _connectedDeviceName.asStateFlow()
 
-    private val REPORT_DESCRIPTOR = byteArrayOf(
-        0x05, 0x01, 0x09, 0x02, 0xA1.toByte(), 0x01,
-        0x09, 0x01, 0xA1.toByte(), 0x00,
-        0x05, 0x09, 0x19, 0x01, 0x29, 0x03,
-        0x15, 0x00, 0x25, 0x01, 0x95.toByte(), 0x03, 0x75, 0x01, 0x81.toByte(), 0x02,
-        0x95.toByte(), 0x01, 0x75, 0x05, 0x81.toByte(), 0x03,
-        0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x38,
-        0x15, 0x81.toByte(), 0x25, 0x7F, 0x75, 0x08, 0x95.toByte(), 0x03, 0x81.toByte(), 0x06,
-        0xC0.toByte(), 0xC0.toByte()
-    )
+    private val REPORT_DESCRIPTOR = BluetoothHidReports.REPORT_DESCRIPTOR
+
 
     private fun hasBluetoothPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -85,8 +78,8 @@ class BluetoothHidDataSource @Inject constructor(
                             }
                             hidDevice = proxy as BluetoothHidDevice
                             val sdp = BluetoothHidDeviceAppSdpSettings(
-                                "UniPoint Mouse", "UniPoint BT Mouse", "UniPoint",
-                                BluetoothHidDevice.SUBCLASS1_MOUSE, REPORT_DESCRIPTOR
+                                "DOUPAD Input", "DOUPAD Bluetooth Mouse + Keyboard", "SAMZ Labs",
+                                BluetoothHidDevice.SUBCLASS1_COMBO, REPORT_DESCRIPTOR
                             )
                             val inQos = BluetoothHidDeviceAppQosSettings(
                                 BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
@@ -161,9 +154,13 @@ class BluetoothHidDataSource @Inject constructor(
                     sendMouse(if (event.down) btn else 0, 0, 0, 0)
                 }
                 is InputEvent.MouseScroll -> sendMouse(0, 0, 0, event.dy)
+                is InputEvent.KeyEvent -> sendKeyboard(event.keyCode, event.down, event.modifiers)
                 is InputEvent.TextInput -> event.text.forEach { c ->
                     val (k, m) = HidKeycodes.charToHid(c)
-                    sendKeyboard(k, true, m); sendKeyboard(k, false, 0)
+                    if (k != 0) {
+                        sendKeyboard(k, true, m)
+                        sendKeyboard(k, false, 0)
+                    }
                 }
                 else -> {}
             }
@@ -175,15 +172,26 @@ class BluetoothHidDataSource @Inject constructor(
         val device = hostDevice ?: return
         val hid = hidDevice ?: return
         try {
-            hid.sendReport(device, 0, byteArrayOf(
-                buttons.toByte(),
-                dx.coerceIn(-127, 127).toByte(),
-                dy.coerceIn(-127, 127).toByte(),
-                wheel.coerceIn(-127, 127).toByte()
-            ))
+            hid.sendReport(
+                device,
+                BluetoothHidReports.MOUSE_REPORT_ID,
+                BluetoothHidReports.mouseReport(buttons, dx, dy, wheel)
+            )
         } catch (e: Exception) { Log.w(tag, "report", e) }
     }
 
     @SuppressLint("MissingPermission")
-    private fun sendKeyboard(keyCode: Int, down: Boolean, modifiers: Int) { /* mouse-only for stability */ }
+    private fun sendKeyboard(keyCode: Int, down: Boolean, modifiers: Int) {
+        val device = hostDevice ?: return
+        val hid = hidDevice ?: return
+        try {
+            hid.sendReport(
+                device,
+                BluetoothHidReports.KEYBOARD_REPORT_ID,
+                BluetoothHidReports.keyboardReport(keyCode, down, modifiers)
+            )
+        } catch (e: Exception) {
+            Log.w(tag, "keyboard report", e)
+        }
+    }
 }

@@ -51,7 +51,7 @@
             </intent-filter>
         </activity>
 
-        <activity android:name="com.unipoint.presentation.ui.DoupadMirrorActivity" android:exported="false" android:configChanges="orientation|screenSize" />
+        <activity android:name="com.unipoint.presentation.ui.DoupadMirrorActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <service
             android:name=".service.ConnectionForegroundService"
