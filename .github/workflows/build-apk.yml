@@ -41,14 +41,16 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
-      - name: Install Android SDK 35
+      - name: Install Android SDK 36
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager \
             'platform-tools' \
-            'platforms;android-35' \
+            'platforms;android-36' \
             'build-tools;35.0.0'
 
       - name: Make Gradle wrapper executable
@@ -58,12 +60,13 @@ jobs:
         run: |
           java -version
           ./gradlew --version
-          sdkmanager --list_installed | sed -n '1,120p'
+          sdkmanager --list_installed | sed -n '1,160p'
 
       - name: Verify source contracts
         run: |
           python3 verification/test_doupad_source.py
           python3 verification/test_realtime_source.py
+          python3 verification/test_engine4_source.py
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
@@ -77,15 +80,15 @@ jobs:
           mkdir -p dist
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -f "$APK"
-          cp "$APK" 'dist/DOUPAD-3.2.0-connectivity-debug.apk'
-          sha256sum 'dist/DOUPAD-3.2.0-connectivity-debug.apk' | tee 'dist/SHA256SUMS.txt'
+          cp "$APK" 'dist/DOUPAD-4.0.0-android-engine-debug.apk'
+          sha256sum 'dist/DOUPAD-4.0.0-android-engine-debug.apk' | tee 'dist/SHA256SUMS.txt'
 
       - name: Upload DOUPAD APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DOUPAD-3.2.0-connectivity-debug
+          name: DOUPAD-4.0.0-android-engine-debug
           path: |
-            dist/DOUPAD-3.2.0-connectivity-debug.apk
+            dist/DOUPAD-4.0.0-android-engine-debug.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

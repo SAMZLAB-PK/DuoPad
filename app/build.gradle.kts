@@ -8,13 +8,13 @@ plugins {
 
 android {
     namespace = "com.unipoint"
-    compileSdk = 35
+    compileSdk = 36
     buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "com.samz.doupad"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 10
         versionName = "4.0.0-android-engine"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
