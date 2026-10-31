@@ -12,7 +12,7 @@ assert 'openNearby("Mirror")' in ui
 assert 'openNearby("Send files")' in ui
 assert 'openNearby("Install APK")' in ui
 assert '4->{' in ui and 'Text("Nearby devices"' in ui
-assert 'onClick={open(Target(deviceName,device.id,false,remembered?.customName))}' in ui
-assert 'onClick={open(Target(name,host.address,true,previous?.customName))}' in ui
+assert 'targetButton(Target(name,device.id,false' in ui or 'targetButton(Target(name,device.id,false,saved?.customName)' in ui
+assert 'targetButton(Target(name,host.address,true' in ui
 assert 'applySelectedAction()' in ui
 print("SAMZ_LINK_V04_PASSIVE_DISCOVERY_VERIFY_OK")
