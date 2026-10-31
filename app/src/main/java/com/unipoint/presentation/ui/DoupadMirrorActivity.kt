@@ -7,6 +7,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.media.MediaCodecList
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -380,13 +381,28 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 }
             }
 
-            checkpoint(ticket, "Initializing hardware H.264 decoder (${width}×${height})")
+            val softwareRequested = intent.getBooleanExtra("safe_decoder", false)
+            checkpoint(ticket, "Initializing ${if (softwareRequested) "software-first" else "automatic"} H.264 decoder (${width}×${height})")
             val format = MediaFormat.createVideoFormat("video/avc", width, height)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !softwareRequested) {
                 format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
             }
             format.setInteger(MediaFormat.KEY_PRIORITY, 0)
-            val codec = MediaCodec.createDecoderByType("video/avc")
+            val softwareCodecName = if (softwareRequested) {
+                runCatching {
+                    MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+                        .filter { !it.isEncoder && it.supportedTypes.any { type -> type.equals("video/avc", true) } }
+                        .firstOrNull { info ->
+                            info.name.contains("google", true) ||
+                                info.name.contains("c2.android", true) ||
+                                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info.isSoftwareOnly)
+                        }?.name
+                }.getOrNull()
+            } else null
+            checkpoint(ticket, "Video decoder selected: ${softwareCodecName ?: "Android system default"}")
+            val codec = if (softwareCodecName != null) {
+                MediaCodec.createByCodecName(softwareCodecName)
+            } else MediaCodec.createDecoderByType("video/avc")
             current.codec = codec
             codec.configure(format, holder.surface, null, 0)
             codec.start()
