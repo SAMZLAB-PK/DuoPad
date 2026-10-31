@@ -206,12 +206,22 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         "apps"->{AppManagerScreen(onBack=back);return}
         "files"->{FileManagerScreen(onBack=back);return}
         "preview"->{ScreenMirrorScreen(onBack=back);return}
-        "mouse"->{AndroidMousePadScreen(onBack=back,airMouse=airMouseSelected);return}
-        "androidKeyboard"->{AndroidKeyboardScreen(onBack={detail=null;remoteMode=0},onSwipeMode={direction->
-            when {
-                direction<0 -> { airMouseSelected=true;detail="mouse";remoteMode=2 }
-                else -> { detail=null;remoteMode=0 }
+        "mouse"->{AndroidMousePadScreen(
+            onBack={detail=null;remoteMode=0},
+            airMouse=airMouseSelected,
+            onSwipeMode={direction->
+                if(!airMouseSelected) {
+                    if(direction>0){airMouseSelected=true;remoteMode=2;detail="mouse"}
+                    else {detail=null;remoteMode=0}
+                } else {
+                    if(direction>0){remoteMode=3;detail="androidKeyboard"}
+                    else {airMouseSelected=false;remoteMode=1;detail="mouse"}
+                }
             }
+        );return}
+        "androidKeyboard"->{AndroidKeyboardScreen(onBack={detail=null;remoteMode=0},onSwipeMode={direction->
+            if(direction<0){airMouseSelected=true;remoteMode=2;detail="mouse"}
+            else {detail=null;remoteMode=0}
         });return}
         "shellFull"->{AdbShellScreen(onBack=back);return}
         "gamepadFull"->{AndroidGamepadScreen(onBack=back);return}
@@ -378,6 +388,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                                 onHorizontalDrag={_,amount->total+=amount},
                                 onDragEnd={
                                     if(total < -90f && requireTv()){remoteMode=1;airMouseSelected=false;detail="mouse"}
+                                    else if(total > 90f && requireTv()){remoteMode=3;detail="androidKeyboard"}
                                 }
                             )
                         }
