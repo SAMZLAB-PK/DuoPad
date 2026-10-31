@@ -40,6 +40,8 @@ class AdbDataSource constructor(
     private val tag = "AdbDataSource"
     private var dadb: Dadb? = null
     @Volatile private var authorizedModelName: String? = null
+    @Volatile private var lastConnectedIp: String? = null
+    @Volatile private var lastConnectedPort: Int = 5555
     fun connectedModelName(): String? = authorizedModelName
     private var cachedKeyPair: AdbKeyPair? = null
     private val adbMutex = Mutex()
@@ -219,6 +221,8 @@ class AdbDataSource constructor(
                     ?: runCatching { session.shell("getprop ro.product.device").allOutput.trim() }
                         .getOrDefault("").ifBlank { "Android device ($finalIp)" }
                 authorizedModelName = model
+                lastConnectedIp = finalIp
+                lastConnectedPort = finalPort
                 runCatching {
                     val rawSize = session.shell("wm size 2>/dev/null | tail -1").allOutput
                     Regex("(\\d+)x(\\d+)").findAll(rawSize).lastOrNull()?.let { match ->
@@ -520,10 +524,52 @@ class AdbDataSource constructor(
         return shell("input swipe ${screenWidth / 2} $center ${screenWidth / 2} ${center + delta} 160").map { }
     }
 
+    private fun isRecoverableAdbError(error: Throwable): Boolean {
+        val message = generateSequence(error) { it.cause }
+            .mapNotNull { it.message }.joinToString(" ").lowercase()
+        return listOf("broken pipe", "connection reset", "socket closed", "closed channel", "eof", "connection aborted")
+            .any { it in message }
+    }
+
+    /**
+     * Reopen the already-authorized ADB transport with the same RSA key.
+     * This is only called after a successful explicit user connection.
+     */
+    private fun reconnectAuthorizedLocked(): Result<Dadb> {
+        val host = lastConnectedIp ?: return Result.failure(Exception("No previously authorized Android device"))
+        val key = keyPairOrNull() ?: return Result.failure(Exception("ADB key unavailable"))
+        return try {
+            closeRealtimeControl()
+            runCatching { dadb?.close() }
+            val fresh = Dadb.create(host, lastConnectedPort, key, 3500, 5500)
+            val check = fresh.shell("echo doupad-pro-reconnected").allOutput
+            if (!check.contains("doupad-pro-reconnected")) {
+                fresh.close()
+                Result.failure(Exception("ADB reconnect verification failed"))
+            } else {
+                dadb = fresh
+                _isConnected.value = true
+                Result.success(fresh)
+            }
+        } catch (e: Exception) {
+            Result.failure(Exception("ADB reconnect failed: ${e.message}", e))
+        }
+    }
+
     suspend fun shell(cmd: String): Result<String> = withContext(Dispatchers.IO) {
         adbMutex.withLock {
-            val d = dadb ?: return@withLock Result.failure(Exception("Not connected"))
-            try { Result.success(d.shell(cmd).allOutput) } catch (e: Exception) { Result.failure(e) }
+            var d = dadb ?: return@withLock Result.failure(Exception("Not connected"))
+            try {
+                Result.success(d.shell(cmd).allOutput)
+            } catch (first: Exception) {
+                if (!isRecoverableAdbError(first)) return@withLock Result.failure(first)
+                d = reconnectAuthorizedLocked().getOrElse { return@withLock Result.failure(it) }
+                try {
+                    Result.success(d.shell(cmd).allOutput)
+                } catch (second: Exception) {
+                    Result.failure(Exception("ADB command failed after reconnect: ${second.message}", second))
+                }
+            }
         }
     }
 
@@ -770,40 +816,50 @@ class AdbDataSource constructor(
 
     suspend fun screenshot(localPath: String): Result<Unit> = withContext(Dispatchers.IO) {
         adbMutex.withLock {
-            val d = dadb ?: return@withLock Result.failure(Exception("Not connected"))
             val target = File(localPath).apply { parentFile?.mkdirs(); delete() }
 
-            // Fast path: stream PNG bytes directly over ADB. This avoids /sdcard permission,
-            // sync and pull quirks seen on some Android TV boxes.
-            try {
-                val stream = d.open("shell:screencap -p")
-                val bytes = try { stream.source.readByteArray() } finally { stream.close() }
-                if (isPng(bytes)) {
-                    target.writeBytes(bytes)
-                    return@withLock Result.success(Unit)
+            fun captureWith(d: Dadb): Result<Unit> {
+                // Fast path: stream PNG directly, which is reliable on most TV boxes.
+                try {
+                    val stream = d.open("shell:screencap -p")
+                    val bytes = try { stream.source.readByteArray() } finally { stream.close() }
+                    if (isPng(bytes)) {
+                        target.writeBytes(bytes)
+                        return Result.success(Unit)
+                    }
+                } catch (e: Exception) {
+                    if (isRecoverableAdbError(e)) return Result.failure(e)
+                    Log.w(tag, "Direct screenshot failed; trying file fallback: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(tag, "Direct screenshot failed; trying file fallback: ${e.message}")
+
+                val remote = "/sdcard/.doupad_pro_${System.currentTimeMillis()}.png"
+                return try {
+                    val capture = d.shell("screencap -p '$remote' && sync")
+                    if (capture.exitCode != 0) throw java.io.IOException(capture.allOutput.ifBlank { "screencap failed" })
+                    d.pull(target, remote)
+                    runCatching { d.shell("rm -f '$remote'") }
+                    val bytes = if (target.exists()) target.readBytes() else ByteArray(0)
+                    if (!isPng(bytes)) {
+                        target.delete()
+                        Result.failure(Exception("Screenshot returned no valid PNG image"))
+                    } else Result.success(Unit)
+                } catch (e: Exception) {
+                    runCatching { d.shell("rm -f '$remote'") }
+                    target.delete()
+                    Result.failure(e)
+                }
             }
 
-            val remote = "/sdcard/.doupad_${System.currentTimeMillis()}.png"
-            try {
-                val capture = d.shell("screencap -p '$remote' && sync")
-                if (capture.exitCode != 0) {
-                    return@withLock Result.failure(Exception(capture.allOutput.ifBlank { "screencap failed" }))
-                }
-                d.pull(target, remote)
-                runCatching { d.shell("rm -f '$remote'") }
-                val bytes = if (target.exists()) target.readBytes() else ByteArray(0)
-                if (!isPng(bytes)) {
-                    target.delete()
-                    Result.failure(Exception("Screenshot returned no valid PNG image"))
-                } else Result.success(Unit)
-            } catch (e: Exception) {
-                runCatching { d.shell("rm -f '$remote'") }
-                target.delete()
-                Result.failure(e)
-            }
+            var d = dadb ?: return@withLock Result.failure(Exception("Not connected"))
+            val first = captureWith(d)
+            if (first.isSuccess) return@withLock first
+            val error = first.exceptionOrNull()
+            if (error == null || !isRecoverableAdbError(error)) return@withLock first
+            d = reconnectAuthorizedLocked().getOrElse { return@withLock Result.failure(it) }
+            captureWith(d).fold(
+                onSuccess = { Result.success(Unit) },
+                onFailure = { Result.failure(Exception("Screenshot failed after ADB reconnect: ${it.message}", it)) }
+            )
         }
     }
 
