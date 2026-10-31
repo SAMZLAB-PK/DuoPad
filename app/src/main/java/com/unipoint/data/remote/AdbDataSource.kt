@@ -463,9 +463,15 @@ class AdbDataSource constructor(
             )
         )
         if (direct.isSuccess) return direct
-        return shell(
-            "input mouse motionevent MOVE $x $y 2>/dev/null || input motionevent MOVE $x $y 2>/dev/null || true"
-        ).map { }
+        // Not all TV ROMs support shell pointer motion; never silently claim success.
+        val fallback = shell("input mouse motionevent MOVE $x $y")
+        return fallback.flatMap { output ->
+            if (output.contains("Error", ignoreCase = true) ||
+                output.contains("Unknown", ignoreCase = true) ||
+                output.contains("Usage:", ignoreCase = true)) {
+                Result.failure(Exception("TV does not support mouse motion through ADB shell"))
+            } else Result.success(Unit)
+        }
     }
 
     suspend fun pointerClick(

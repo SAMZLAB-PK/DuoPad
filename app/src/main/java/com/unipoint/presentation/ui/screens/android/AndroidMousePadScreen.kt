@@ -1,5 +1,11 @@
 package com.unipoint.presentation.ui.screens.android
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -30,9 +36,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun AndroidMousePadScreen(
     onBack: () -> Unit,
+    airMouse: Boolean = false,
     viewModel: MainViewModel = hiltViewModel()
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val sensorManager = remember(context) { context.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
+    val gyro = remember(sensorManager) { sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE) }
+    var motionEnabled by remember(airMouse) { mutableStateOf(airMouse) }
     val latestPosition = remember { LatestPositionBuffer() }
     var screenW by remember { mutableIntStateOf(1920) }
     var screenH by remember { mutableIntStateOf(1080) }
@@ -57,6 +68,37 @@ fun AndroidMousePadScreen(
         }
     }
 
+    // Air Mouse uses gyroscope angular velocity while this screen is foreground.
+    // Sensors are released immediately when navigating back or turning motion off.
+    DisposableEffect(motionEnabled, gyro, sensitivity, screenW, screenH) {
+        if (!motionEnabled || gyro == null) {
+            if (motionEnabled && gyro == null) status = "No gyroscope on this phone. Use touchpad instead."
+            onDispose { }
+        } else {
+            var previousTime = 0L
+            val listener = object : SensorEventListener {
+                override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+                override fun onSensorChanged(event: SensorEvent) {
+                    if (event.sensor.type != Sensor.TYPE_GYROSCOPE) return
+                    val dt = if (previousTime == 0L) 0f
+                        else ((event.timestamp - previousTime) / 1_000_000_000f).coerceIn(0f, 0.055f)
+                    previousTime = event.timestamp
+                    if (dt == 0f) return
+                    val yaw = event.values[1]
+                    val pitch = event.values[0]
+                    if (kotlin.math.abs(yaw) < 0.015f && kotlin.math.abs(pitch) < 0.015f) return
+                    x = (x - yaw * dt * screenW * sensitivity * 0.6f)
+                        .coerceIn(0f, (screenW - 1).toFloat())
+                    y = (y - pitch * dt * screenH * sensitivity * 0.6f)
+                        .coerceIn(0f, (screenH - 1).toFloat())
+                    latestPosition.offer(x.toInt(), y.toInt())
+                }
+            }
+            sensorManager.registerListener(listener, gyro, SensorManager.SENSOR_DELAY_GAME)
+            onDispose { sensorManager.unregisterListener(listener) }
+        }
+    }
+
     // One low-latency sender only. The single-slot buffer always keeps the newest
     // position, so even if Wi-Fi stalls briefly the cursor never replays stale moves.
     LaunchedEffect(Unit) {
@@ -67,9 +109,13 @@ fun AndroidMousePadScreen(
                 continue
             }
             val startedAt = System.nanoTime()
-            viewModel.executeAdbResult(
+            val result = viewModel.executeAdbResult(
                 AdbCommand.PointerMove(position.x, position.y, screenW, screenH)
             )
+            if(result.isFailure) {
+                status = "Pointer unavailable: ${result.exceptionOrNull()?.message ?: "unknown error"}"
+                delay(180)
+            }
             // ~120 Hz input sampling; the TV/mirror may render at a lower refresh rate.
             val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L
             delay((8L - elapsedMs).coerceAtLeast(0L))
@@ -80,9 +126,10 @@ fun AndroidMousePadScreen(
         scope.launch {
             val px = x.toInt().coerceIn(0, screenW - 1)
             val py = y.toInt().coerceIn(0, screenH - 1)
-            viewModel.executeAdbResult(
+            val result=viewModel.executeAdbResult(
                 AdbCommand.PointerClick(px, py, screenW, screenH, button)
             )
+            if(result.isFailure)status="Click failed: ${result.exceptionOrNull()?.message}"
         }
     }
 
@@ -108,7 +155,7 @@ fun AndroidMousePadScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Mouse Pad", fontWeight = FontWeight.Bold)
+                        Text(if (airMouse) "Air Mouse" else "Mouse Pad", fontWeight = FontWeight.Bold)
                         Text("Android TV / Google TV", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -129,6 +176,13 @@ fun AndroidMousePadScreen(
                 Modifier.fillMaxSize().padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                if (airMouse) {
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text("Motion control", modifier=Modifier.weight(1f))
+                        Switch(checked=motionEnabled && gyro != null,
+                            onCheckedChange={motionEnabled=it},enabled=gyro != null)
+                    }
+                }
                 Card(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     shape = RoundedCornerShape(28.dp),
@@ -153,7 +207,8 @@ fun AndroidMousePadScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Default.Mouse, null, Modifier.size(54.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.height(10.dp))
-                            Text("Touchpad", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(if(airMouse)"Tilt phone to move cursor" else "Touchpad",
+                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                             Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.height(8.dp))
                             Text("${x.toInt()} × ${y.toInt()}  •  ${screenW}×${screenH}", style = MaterialTheme.typography.labelSmall)

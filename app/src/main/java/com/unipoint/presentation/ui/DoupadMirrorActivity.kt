@@ -58,6 +58,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Select landscape before SurfaceView creation so video is not torn down
+        // halfway through an active MediaCodec session by a late rotation request.
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         enterImmersive()
 
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
@@ -122,11 +125,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         enterImmersive()
-        session?.let { current ->
-            if (current.displayWidth > 0 && current.displayHeight > 0) {
-                root.post { fitSurface(current.displayWidth, current.displayHeight) }
-            }
-        }
+        // Surface is kept at a stable size across rotation. Do not resize it
+        // while a video decoder is attached.
     }
 
     private fun show(ticket: Int, message: String) = runOnUiThread {
@@ -197,15 +197,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         val ticket = generation.incrementAndGet()
-        worker.execute { stream(holder, ticket) }
+        runCatching { worker.execute { stream(holder, ticket) } }
+            .onFailure { show(ticket, "Mirror surface unavailable: ${it.message}") }
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        session?.let { current ->
-            if (current.displayWidth > 0 && current.displayHeight > 0) {
-                fitSurface(current.displayWidth, current.displayHeight)
-            }
-        }
+        // Leave SurfaceView unchanged: resizing while the codec is attached
+        // can destroy the Surface and abort the scrcpy session.
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -286,18 +284,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
             runOnUiThread {
                 if (generation.get() == ticket) {
-                    requestedOrientation = if (width >= height) {
-                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                    } else {
-                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                    }
                     enterImmersive()
-                    root.post {
-                        if (generation.get() == ticket) {
-                            fitSurface(width, height)
-                            status.visibility = View.GONE
-                        }
-                    }
+                    // Never change requested orientation or SurfaceView size here.
+                    // Doing so invalidates the surface during stream setup.
                 }
             }
 
@@ -305,6 +294,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             current.codec = codec
             codec.configure(MediaFormat.createVideoFormat("video/avc", width, height), holder.surface, null, 0)
             codec.start()
+            runOnUiThread {
+                if (generation.get() == ticket) status.visibility = View.GONE
+            }
 
             drain = thread(name = "doupad-video-output") {
                 val info = MediaCodec.BufferInfo()
