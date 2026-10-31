@@ -14,7 +14,7 @@ assert 'authorizedModelName = model' in adb
 assert 'val verifiedName = adb.connectedModelName()' in repo
 assert 'Sensor.TYPE_GYROSCOPE' in mouse and 'sensorManager.unregisterListener(listener)' in mouse
 assert 'AdbCommand.PointerMove' in mouse
-assert 'requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE' in mirror
+assert 'MirrorCrashRecorder.started(this)' in mirror and 'requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE' not in mirror
 assert 'Never change requested orientation or SurfaceView size here.' in mirror
 assert 'worker.execute' in mirror
 print("SAMZ LINK 0.3 SOURCE CHECKS: PASS")
