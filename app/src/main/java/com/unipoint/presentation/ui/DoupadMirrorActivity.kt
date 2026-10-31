@@ -61,7 +61,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             file.appendText("${System.currentTimeMillis()} session=$ticket ERROR $message\n")
             if (file.length() > 65_536L) file.writeText(file.readText().takeLast(32_768))
         }
-        show(ticket, "Live mirror error: $message")
+        show(ticket, "Live mirror error: $message. Long-press this message to copy diagnostics.")
     }
 
     private class Session(val adb: Dadb) {
@@ -104,6 +104,15 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             setTextColor(Color.WHITE)
             setBackgroundColor(0x99000000.toInt())
             setPadding(24, 20, 24, 20)
+            setOnLongClickListener {
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val diagnostics = runCatching {
+                    File(filesDir, "doupad_mirror_diagnostics.txt").readText().takeLast(7000)
+                }.getOrDefault(text.toString())
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("DouPad Mirror diagnostics",diagnostics))
+                android.widget.Toast.makeText(this@DoupadMirrorActivity,"Mirror diagnostics copied",android.widget.Toast.LENGTH_SHORT).show()
+                true
+            }
         }
         root.addView(
             surface,
