@@ -19,5 +19,5 @@ assert 'Semaphore(2)' in apps and 'queue.withPermit' in apps
 assert 'VideoProfile(960, 24, 2_000_000, false)' in video
 assert 'VideoProfile(720, 15, 1_200_000, true)' in video
 assert 'video_codec=h264' in video
-assert 'versionCode = 7' in build and '0.7.0-mirror-diagnostics-beta' in build
+assert 'versionCode = 8' in build and '0.8.0-startup-crash-beta' in build
 print("DOUPAD_PRO_V06_SOURCE_CHECKS_PASS")
