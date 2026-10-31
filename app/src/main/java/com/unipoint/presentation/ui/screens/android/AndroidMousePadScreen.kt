@@ -19,7 +19,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -52,7 +51,7 @@ fun AndroidMousePadScreen(
     var screenH by remember { mutableIntStateOf(1080) }
     var x by remember { mutableFloatStateOf(screenW / 2f) }
     var y by remember { mutableFloatStateOf(screenH / 2f) }
-    var sensitivity by remember { mutableFloatStateOf(2.0f) }
+    var sensitivity by remember { mutableFloatStateOf(0.95f) }
     var status by remember { mutableStateOf("Move your finger to control the TV pointer") }
 
     LaunchedEffect(Unit) {
@@ -153,7 +152,7 @@ fun AndroidMousePadScreen(
     }
 
     Scaffold(
-        containerColor = Color.Transparent,
+        containerColor = Color(0xFFFBFCFD),
         topBar = {
             TopAppBar(
                 modifier = Modifier.pointerInput(airMouse) {
@@ -177,30 +176,28 @@ fun AndroidMousePadScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         }
     ) { padding ->
         Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(listOf(Color(0xFF050B14), Color(0xFF081827), Color(0xFF07111F)))
-            ).padding(padding)
+            Modifier.fillMaxSize().background(Color(0xFFFBFCFD)).padding(padding)
         ) {
             Column(
-                Modifier.fillMaxSize().padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                Modifier.fillMaxSize().padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (airMouse) {
-                    Row(verticalAlignment=Alignment.CenterVertically) {
-                        Text("Motion control", modifier=Modifier.weight(1f))
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                        Text("Motion control", modifier=Modifier.weight(1f),color=Color(0xFF102033))
                         Switch(checked=motionEnabled && gyro != null,
                             onCheckedChange={motionEnabled=it},enabled=gyro != null)
                     }
                 }
                 Card(
                     modifier = Modifier.fillMaxWidth().weight(1f),
-                    shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .82f))
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F5F7))
                 ) {
                     Box(
                         Modifier.fillMaxSize()
@@ -232,34 +229,34 @@ fun AndroidMousePadScreen(
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .76f))
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
                 ) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Pointer speed", style = MaterialTheme.typography.labelMedium)
                         Slider(
                             value = sensitivity,
                             onValueChange = { sensitivity = it },
-                            valueRange = 0.8f..4.0f,
+                            valueRange = 0.45f..2.5f,
                             steps = 7
                         )
                     }
                 }
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    FilledTonalButton(onClick = { click(MouseButton.LEFT) }, modifier = Modifier.weight(1f).height(54.dp)) {
+                    FilledTonalButton(onClick = { click(MouseButton.LEFT) }, modifier = Modifier.weight(1f).height(48.dp)) {
                         Icon(Icons.Default.TouchApp, null)
                         Spacer(Modifier.width(7.dp))
-                        Text("Left click")
+                        Text("Left",maxLines=1)
                     }
-                    FilledTonalButton(onClick = { click(MouseButton.RIGHT) }, modifier = Modifier.weight(1f).height(54.dp)) {
+                    FilledTonalButton(onClick = { click(MouseButton.RIGHT) }, modifier = Modifier.weight(1f).height(48.dp)) {
                         Icon(Icons.Default.Mouse, null)
                         Spacer(Modifier.width(7.dp))
-                        Text("Right click")
+                        Text("Right",maxLines=1)
                     }
                     FilledTonalButton(
                         onClick = { viewModel.executeAdb(AdbCommand.InputKey(4)) },
-                        modifier = Modifier.weight(1f).height(54.dp)
+                        modifier = Modifier.weight(1f).height(48.dp)
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
                         Spacer(Modifier.width(7.dp))
@@ -268,11 +265,11 @@ fun AndroidMousePadScreen(
                 }
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(onClick = { scroll(1) }, modifier = Modifier.weight(1f).height(50.dp)) {
-                        Icon(Icons.Default.KeyboardArrowUp, null); Spacer(Modifier.width(5.dp)); Text("Scroll up")
+                    OutlinedButton(onClick = { scroll(1) }, modifier = Modifier.weight(1f).height(44.dp)) {
+                        Icon(Icons.Default.KeyboardArrowUp, null); Spacer(Modifier.width(5.dp)); Text("Up",maxLines=1)
                     }
-                    OutlinedButton(onClick = { scroll(-1) }, modifier = Modifier.weight(1f).height(50.dp)) {
-                        Icon(Icons.Default.KeyboardArrowDown, null); Spacer(Modifier.width(5.dp)); Text("Scroll down")
+                    OutlinedButton(onClick = { scroll(-1) }, modifier = Modifier.weight(1f).height(44.dp)) {
+                        Icon(Icons.Default.KeyboardArrowDown, null); Spacer(Modifier.width(5.dp)); Text("Down",maxLines=1)
                     }
                 }
             }
