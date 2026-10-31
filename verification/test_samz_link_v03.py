@@ -8,7 +8,8 @@ mirror=(root/"app/src/main/java/com/unipoint/presentation/ui/DoupadMirrorActivit
 assert 'customName' in ui and 'saveTargets(context,targets)' in ui
 assert 'dialog="connectingSaved"' in ui and 'vm.connectAndroidIp("$ip:$port")' in ui
 assert 'Modifier.fillMaxWidth().height(76.dp)' in ui
-assert 'airMouseSelected=i==2;detail="mouse"' in ui
+assert 'airMouseSelected=true;detail="mouse"' in ui
+assert 'airMouseSelected=false;detail="mouse"' in ui
 assert 'authorizedModelName = model' in adb
 assert 'val verifiedName = adb.connectedModelName()' in repo
 assert 'Sensor.TYPE_GYROSCOPE' in mouse and 'sensorManager.unregisterListener(listener)' in mouse
