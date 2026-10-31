@@ -493,6 +493,27 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
                         Icon(Icons.Default.Fullscreen,null);Text("Live video · H.264 low-latency")
                     }
+                    OutlinedButton(onClick={
+                        if(requireTv()){
+                            val endpoint=status.address
+                            MirrorCrashRecorder.launch(context,!endpoint.isNullOrBlank())
+                            MirrorCrashRecorder.note(context,"Compatibility stream: software-first decoder requested")
+                            try {
+                                context.startActivity(
+                                    Intent(context,DoupadMirrorActivity::class.java)
+                                        .putExtra("endpoint",endpoint)
+                                        .putExtra("safe_decoder",true)
+                                )
+                            } catch(error:Exception){
+                                MirrorCrashRecorder.note(context,
+                                    "SAFE_MODE_LAUNCH_FAILED: ${error.javaClass.simpleName}: ${error.message}")
+                                MirrorCrashRecorder.finish(context,"compatibility launch failed")
+                                message("Could not open compatibility stream: ${error.message}")
+                            }
+                        }
+                    },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
+                        Icon(Icons.Default.Shield,null);Spacer(Modifier.width(8.dp));Text("Live video · Compatibility decoder")
+                    }
                     Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Quick("Screenshot",Icons.Default.PhotoCamera,Modifier.weight(1f)){if(requireTv()){detail="preview"}};Quick("Record",Icons.Default.FiberManualRecord,Modifier.weight(1f)){dialog="record"}}
                     Text("Video streaming",fontWeight=FontWeight.SemiBold);Text("Hardware-decoded H.264 • up to 30 fps • adaptive setup",fontSize=12.sp,color=Muted)
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Column{Text("Include TV audio",fontWeight=FontWeight.SemiBold);Text("Video-only in this beta",fontSize=12.sp,color=Muted)};Switch(checked=false,onCheckedChange={message("Audio forwarding is not enabled in this beta.")})}
