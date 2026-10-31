@@ -13,6 +13,6 @@ oncreate = video.split("override fun onCreate(", 1)[1].split("private fun enterI
 assert "enterImmersive()\n\n        root =" not in oncreate
 assert oncreate.index("setContentView(root)") < oncreate.index("root.post {")
 assert "MirrorCrashRecorder.started(this)" in oncreate
-assert "versionCode = 9" in build
-assert 'versionName = "0.9.0-immersive-startup-fix-beta"' in build
+assert "versionCode = 10" in build
+assert 'versionName = "0.10.0-frame-watchdog-beta"' in build
 print("DOUPAD_PRO_V09_IMMERSIVE_STARTUP_CHECKS_PASS")
