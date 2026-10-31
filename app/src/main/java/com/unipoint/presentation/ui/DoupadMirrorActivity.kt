@@ -90,8 +90,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         // Never force orientation during startup: some Android 15/16 device
         // configurations reject an orientation request before the first draw.
         MirrorCrashRecorder.started(this)
-        enterImmersive()
-
+        // Do not read WindowInsetsController yet: DecorView is not attached.
+        // Android 15/16 may throw NPE from PhoneWindow.getInsetsController().
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         surface = SurfaceView(this).apply {
             isFocusable = true
@@ -133,25 +133,38 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             )
         )
         setContentView(root)
+        MirrorCrashRecorder.note(this, "ACTIVITY_CONTENT_READY: content view installed")
         surface.holder.addCallback(this)
+        // Defer fullscreen flags until the DecorView is attached to a window.
+        root.post {
+            if (!isFinishing && !isDestroyed) enterImmersive()
+        }
     }
 
     private fun enterImmersive() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.insetsController?.let { controller ->
+        // Fullscreen is cosmetic: NEVER let a vendor WindowInsets bug crash video.
+        try {
+            val decor = window.decorView
+            if (!decor.isAttachedToWindow) return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // The decor's own controller is safe only after attachment.
+                val controller = decor.windowInsetsController ?: return
                 controller.hide(WindowInsets.Type.systemBars())
                 controller.systemBarsBehavior =
                     WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                @Suppress("DEPRECATION")
+                decor.systemUiVisibility =
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                        View.SYSTEM_UI_FLAG_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility =
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                    View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        } catch (error: RuntimeException) {
+            MirrorCrashRecorder.note(this,
+                "IMMERSIVE_OPTIONAL_FAILURE: ${error.javaClass.simpleName}: ${error.message}")
         }
     }
 
