@@ -23,7 +23,7 @@ assert 'ScrcpyControlProtocol.touch' in adb, 'SDK/touch fallback must remain ava
 # Adaptive H.264 pipeline uses 960p/24fps then 720p/15fps compatibility fallback.
 assert 'max_fps=${profile.fps}' in mirror
 assert 'video_bit_rate=${profile.bitRate}' in mirror
-assert 'VideoProfile(720, 15, 1_200_000, false)' in mirror
+assert 'VideoProfile(720, 15, 1_200_000, true)' in mirror
 assert 'WindowInsets.Type.systemBars()' in mirror
 assert 'SYSTEM_UI_FLAG_IMMERSIVE_STICKY' in mirror
 
