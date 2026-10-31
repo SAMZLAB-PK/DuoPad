@@ -86,6 +86,7 @@ jobs:
           python3 verification/test_samz_link_v03.py
           python3 verification/test_samz_link_v04.py
           python3 verification/test_doupad_pro_v05.py
+          python3 verification/test_doupad_pro_v06.py
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
@@ -99,15 +100,15 @@ jobs:
           mkdir -p dist
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -f "$APK"
-          cp "$APK" 'dist/DouPad-Pro-v0.5.0-debug.apk'
-          sha256sum 'dist/DouPad-Pro-v0.5.0-debug.apk' | tee 'dist/SHA256SUMS.txt'
+          cp "$APK" 'dist/DouPad-Pro-v0.6.0-video-ui-debug.apk'
+          sha256sum 'dist/DouPad-Pro-v0.6.0-video-ui-debug.apk' | tee 'dist/SHA256SUMS.txt'
 
       - name: Upload DOUPAD APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DouPad-Pro-v0.5.0-debug
+          name: DouPad-Pro-v0.6.0-video-ui-debug
           path: |
-            dist/DouPad-Pro-v0.5.0-debug.apk
+            dist/DouPad-Pro-v0.6.0-video-ui-debug.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
