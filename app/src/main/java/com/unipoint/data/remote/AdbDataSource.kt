@@ -108,36 +108,20 @@ class AdbDataSource constructor(
         } catch (_: Exception) { false }
     }
 
+    /**
+     * Passive discovery ONLY. A TCP connect/close does not send ADB CNXN,
+     * credentials, an RSA signature or any authorization request to the TV.
+     * Only an explicit tap on a device card invokes connect() and Dadb.create().
+     * Device names are fetched AFTER authorization and cached with saved devices.
+     */
     private fun probeDevice(ip: String, port: Int): AndroidDevice? {
-        return try {
-            if (!isPortOpen(ip, port, 400)) return null
-            val d = Dadb.create(ip, port, keyPairOrNull(), 800, 1500)
-            val model = try {
-                d.shell("getprop ro.product.model").allOutput.trim()
-            } catch (_: Exception) { "Android" }
-            val ver = try {
-                d.shell("getprop ro.build.version.release").allOutput.trim()
-            } catch (_: Exception) { null }
-            d.close()
-            AndroidDevice(
-                id = "$ip:$port",
-                name = model.ifBlank { "Device @$ip" },
-                ip = ip,
-                port = port,
-                model = model,
-                androidVersion = ver
-            )
-        } catch (_: Exception) {
-            // Port open but ADB auth failed — still show as possible device
-            if (isPortOpen(ip, port, 150)) {
-                AndroidDevice(
-                    id = "$ip:$port",
-                    name = "ADB @$ip",
-                    ip = ip,
-                    port = port
-                )
-            } else null
-        }
+        if (!isPortOpen(ip, port, 360)) return null
+        return AndroidDevice(
+            id = "$ip:$port",
+            name = "Android TV / Box",
+            ip = ip,
+            port = port
+        )
     }
 
     suspend fun discover(extraSubnets: List<String> = emptyList()): List<AndroidDevice> =

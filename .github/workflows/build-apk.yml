@@ -84,6 +84,7 @@ jobs:
           python3 verification/test_engine4_source.py
           python3 verification/test_samz_link_connectivity.py
           python3 verification/test_samz_link_v03.py
+          python3 verification/test_samz_link_v04.py
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
@@ -97,15 +98,15 @@ jobs:
           mkdir -p dist
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -f "$APK"
-          cp "$APK" 'dist/SAMZ-Link-v0.3.0-ux-mouse-mirror-debug.apk'
-          sha256sum 'dist/SAMZ-Link-v0.3.0-ux-mouse-mirror-debug.apk' | tee 'dist/SHA256SUMS.txt'
+          cp "$APK" 'dist/SAMZ-Link-v0.4.0-passive-discovery-debug.apk'
+          sha256sum 'dist/SAMZ-Link-v0.4.0-passive-discovery-debug.apk' | tee 'dist/SHA256SUMS.txt'
 
       - name: Upload DOUPAD APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SAMZ-Link-v0.3.0-ux-mouse-mirror-debug
+          name: SAMZ-Link-v0.4.0-passive-discovery-debug
           path: |
-            dist/SAMZ-Link-v0.3.0-ux-mouse-mirror-debug.apk
+            dist/SAMZ-Link-v0.4.0-passive-discovery-debug.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
