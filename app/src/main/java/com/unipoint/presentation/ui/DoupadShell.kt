@@ -225,6 +225,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         });return}
         "shellFull"->{AdbShellScreen(onBack=back);return}
         "infoFull"->{DeviceInfoProScreen(onBack=back);return}
+        "mirrorLog"->{MirrorDiagnosticsScreen(onBack=back);return}
         "gamepadFull"->{AndroidGamepadScreen(onBack=back);return}
         "mappingFull"->{RemoteMappingScreen(onBack=back);return}
         "pcKeyboard"->{KeyboardScreen(onBack=back);return}
@@ -480,7 +481,10 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Quick("Screenshot",Icons.Default.PhotoCamera,Modifier.weight(1f)){if(requireTv()){detail="preview"}};Quick("Record",Icons.Default.FiberManualRecord,Modifier.weight(1f)){dialog="record"}}
                     Text("Video streaming",fontWeight=FontWeight.SemiBold);Text("Hardware-decoded H.264 • up to 30 fps • adaptive setup",fontSize=12.sp,color=Muted)
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Column{Text("Include TV audio",fontWeight=FontWeight.SemiBold);Text("Video-only in this beta",fontSize=12.sp,color=Muted)};Switch(checked=false,onCheckedChange={message("Audio forwarding is not enabled in this beta.")})}
-                    Hint("Availability depends on the device. Protected video may appear blank.")
+                    OutlinedButton(onClick={detail="mirrorLog"},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
+                        Icon(Icons.Default.BugReport,null);Spacer(Modifier.width(7.dp));Text("Mirror diagnostics & error log")
+                    }
+                    Hint("Availability depends on TV firmware. DRM-protected video may appear blank.")
                 }
                 3->{
                     Title("Device tools","Get more from your devices.")
