@@ -3,6 +3,11 @@ package com.unipoint.presentation.ui.screens.android
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
+import android.os.Build
+import java.text.DateFormat
+import java.util.Date
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,9 +30,28 @@ fun MirrorDiagnosticsScreen(onBack:()->Unit) {
     val context=LocalContext.current
     var refresh by remember { mutableIntStateOf(0) }
     val diagnostics=remember(refresh) {
-        runCatching {
+        val breadcrumbs = runCatching {
             File(context.filesDir,"doupad_mirror_diagnostics.txt").readText().takeLast(15000)
-        }.getOrDefault("No mirror diagnostics yet. Start Live video and retry.")
+        }.getOrDefault("No local mirror startup marker. Please verify v0.8 is installed.")
+        val previousExits = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                val manager = context.getSystemService(ActivityManager::class.java)
+                manager.getHistoricalProcessExitReasons(context.packageName, 0, 5)
+                    .take(5)
+                    .joinToString("\n") { info ->
+                        val reason = when (info.reason) {
+                            ApplicationExitInfo.REASON_CRASH -> "Java crash"
+                            ApplicationExitInfo.REASON_CRASH_NATIVE -> "Native crash"
+                            ApplicationExitInfo.REASON_ANR -> "App not responding"
+                            ApplicationExitInfo.REASON_LOW_MEMORY -> "Low memory"
+                            ApplicationExitInfo.REASON_USER_REQUESTED -> "User exit"
+                            else -> "System reason ${info.reason}"
+                        }
+                        "${DateFormat.getDateTimeInstance().format(Date(info.timestamp))}: $reason; ${info.description.orEmpty().take(350)}"
+                    }.ifBlank { "No historical process exits" }
+            }.getOrDefault("Exit reasons unavailable on this device")
+        } else "Android OS exit reasons require Android 11+"
+        "MIRROR EVENT LOG\n$breadcrumbs\n\nANDROID PROCESS EXIT HISTORY\n$previousExits"
     }
     Scaffold(
         topBar={
@@ -42,7 +66,7 @@ fun MirrorDiagnosticsScreen(onBack:()->Unit) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp),
             verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("Device connection, encoder, video socket and decoder stages are recorded here. No APK or private account information is collected.",
+            Text("Shows startup breadcrumbs, encoder/decoder events and Android process exits, even when the video screen closes unexpectedly. Data stays on this phone.",
                 style=MaterialTheme.typography.bodySmall,color=Color(0xFF667587))
             Button(onClick={
                 val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
