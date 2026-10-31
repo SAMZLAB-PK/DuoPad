@@ -1,6 +1,7 @@
 package com.unipoint
 
 import android.app.Application
+import com.unipoint.core.util.MirrorCrashRecorder
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
@@ -11,6 +12,7 @@ class UniPointApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        MirrorCrashRecorder.install(this)
         createNotificationChannels()
     }
 
