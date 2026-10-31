@@ -224,6 +224,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
             else {detail=null;remoteMode=0}
         });return}
         "shellFull"->{AdbShellScreen(onBack=back);return}
+        "infoFull"->{DeviceInfoProScreen(onBack=back);return}
         "gamepadFull"->{AndroidGamepadScreen(onBack=back);return}
         "mappingFull"->{RemoteMappingScreen(onBack=back);return}
         "pcKeyboard"->{KeyboardScreen(onBack=back);return}
@@ -496,15 +497,8 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                                             "Apps","Install APK" -> detail="apps"
                                             "Files","Transfers" -> detail="files"
                                             "Shell" -> detail="shellFull"
-                                            else -> {
-                                                dialog="Device info"; output="Loading…"
-                                                scope.launch {
-                                                    output=vm.deviceInfo().fold(
-                                                        { info -> info.entries.joinToString("\n") { e -> "${e.key}: ${e.value}" } },
-                                                        { error -> error.message ?: "Unavailable" }
-                                                    )
-                                                }
-                                            }
+                                            "Device info" -> detail="infoFull"
+                                            else -> detail="infoFull"
                                         }
                                     }
                                 }
