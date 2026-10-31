@@ -235,13 +235,27 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
             }
         }
     }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=23.dp,vertical=20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(11.dp)) {
             when(page) {
                 0->{
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("DouPad Pro",fontSize=26.sp,fontWeight=FontWeight.ExtraBold,color=Ink);IconButton(onClick={dialog="settings"}){Icon(Icons.Default.Settings,"Settings")}}
                     Title("Your devices","Control all your screens from one place.")
-                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){listOf("All","TV","PC").forEach{label->FilterChip(selected=filter==label,onClick={filter=label},label={Text(label)},shape=CircleShape,colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Teal,selectedLabelColor=Color.White))}}
-                    val visible=targets.filter {filter=="All"||(filter=="PC")==it.pc}
+                    Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                        listOf("All","TV","PC","Saved").forEach { label ->
+                            FilterChip(selected=filter==label,onClick={filter=label},
+                                label={Text(label,fontSize=11.sp)},shape=CircleShape,
+                                colors=FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor=Teal,selectedLabelColor=Color.White))
+                        }
+                    }
+                    val visible=targets.filter {
+                        when(filter) {
+                            "TV" -> !it.pc
+                            "PC" -> it.pc
+                            "Saved" -> true
+                            else -> true
+                        }
+                    }.distinctBy { it.endpoint }
                     if(visible.isEmpty()) Surface(shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,Border),color=Color.White){Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)){Icon(Icons.Default.Devices,null,Modifier.size(48.dp),tint=Teal);Text("Your first connection starts here",fontWeight=FontWeight.SemiBold);Text("Add a TV or PC over Wi-Fi or Bluetooth.\nYour saved devices will appear here.",fontSize=13.sp,color=Muted);Button(onClick={dialog="connect"},colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Add your device")}}}
                     visible.forEach { target ->
                         val live=connected && status.address==target.endpoint
@@ -398,17 +412,72 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     } else Surface(color=Pale,shape=RoundedCornerShape(22.dp)){Column(Modifier.fillMaxWidth().padding(28.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)){Icon(Icons.Default.Air,null,Modifier.size(36.dp),tint=Teal);Text("Air mouse",fontWeight=FontWeight.Bold);Text("Use the precision mouse controls on your Android TV.",fontSize=12.sp,color=Muted);OutlinedButton(onClick={if(requireTv())detail="mouse"}){Text("Open mouse controls")};Text("Gyroscope steering is not enabled in this native beta.",fontSize=11.sp,color=Muted)}}
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){RoundKey("Back",Icons.AutoMirrored.Filled.ArrowBack){key(4)};RoundKey("Home",Icons.Default.Home){key(3)};RoundKey("Menu",Icons.Default.Menu){key(82)}}
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically){Column(horizontalAlignment=Alignment.CenterHorizontally){Surface(color=Pale,shape=CircleShape,border=BorderStroke(1.dp,Border)){Column(horizontalAlignment=Alignment.CenterHorizontally){IconButton(onClick={key(24)}){Icon(Icons.Default.Add,"Volume up")};Icon(Icons.AutoMirrored.Filled.VolumeUp,null);IconButton(onClick={key(25)}){Icon(Icons.Default.Remove,"Volume down")}}};Text("Volume",fontSize=11.sp,color=Muted)};Column(verticalArrangement=Arrangement.spacedBy(15.dp)){RoundKey("Mute",Icons.AutoMirrored.Filled.VolumeOff){key(164)};RoundKey("Power",Icons.Default.PowerSettingsNew){if(requireTv())dialog="power"}};Column(horizontalAlignment=Alignment.CenterHorizontally){Surface(color=Pale,shape=CircleShape,border=BorderStroke(1.dp,Border)){Column(horizontalAlignment=Alignment.CenterHorizontally){IconButton(onClick={key(166)}){Icon(Icons.Default.KeyboardArrowUp,"Channel up")};Text("CH",fontSize=12.sp);IconButton(onClick={key(167)}){Icon(Icons.Default.KeyboardArrowDown,"Channel down")}}};Text("Channel",fontSize=11.sp,color=Muted)}}
-                    Hint("Swipe left on D-pad to open Touchpad. Touchpad, Air Mouse and Keyboard are full-screen modes.")
+                    if(remoteMode==0 && state.mode==AppMode.ANDROID){
+                        Text("Color keys",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Ink)
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                            listOf(
+                                Triple("Red",183,Color(0xFFE84F59)),
+                                Triple("Green",184,Color(0xFF35A46B)),
+                                Triple("Yellow",185,Color(0xFFE8BE38)),
+                                Triple("Blue",186,Color(0xFF4483DE))
+                            ).forEach { (label,code,tint) ->
+                                Surface(onClick={key(code)},modifier=Modifier.weight(1f).height(37.dp),
+                                    color=tint,shape=RoundedCornerShape(9.dp)){
+                                    Box(contentAlignment=Alignment.Center){
+                                        Text(label,color=if(label=="Yellow")Ink else Color.White,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                        Text("Media",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Ink)
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                            listOf("⏮" to 88,"◀◀" to 89,"▶ / ❚❚" to 85,"▶▶" to 90,"⏭" to 87).forEach { (label,code) ->
+                                OutlinedButton(onClick={key(code)},modifier=Modifier.weight(1f).height(36.dp),
+                                    contentPadding=PaddingValues(1.dp),shape=RoundedCornerShape(9.dp)){
+                                    Text(label,fontSize=11.sp,maxLines=1)
+                                }
+                            }
+                        }
+                        Text("Apps & shortcuts",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Ink)
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                            listOf(
+                                "YouTube" to "com.google.android.youtube.tv",
+                                "Netflix" to "com.netflix.ninja",
+                                "Prime" to "com.amazon.amazonvideo.livingroom",
+                                "Apps" to ""
+                            ).forEach { (label,pkg) ->
+                                OutlinedButton(onClick={
+                                    if(requireTv()){
+                                        if(pkg.isBlank())detail="apps"
+                                        else scope.launch {
+                                            val command = "monkey -p $pkg -c android.intent.category.LAUNCHER 1"
+                                            val result = vm.executeAdbAwait(command)
+                                            if(result.contains("No activities") || result.contains("monkey aborted",true)){
+                                                message("$label is not installed or cannot be opened on this TV.")
+                                            }
+                                        }
+                                    }
+                                },modifier=Modifier.weight(1f).height(36.dp),
+                                    contentPadding=PaddingValues(1.dp),shape=RoundedCornerShape(9.dp)){
+                                    Text(label,fontSize=10.sp,maxLines=1)
+                                }
+                            }
+                        }
+                    }
+                    Hint("Swipe between remote modes. Color keys and app shortcuts depend on TV support.")
                 }
                 2->{
                     Title("Screen mirror","View your device screen in real time.")
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){Button(onClick={},modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(12.dp)){Icon(Icons.Default.Tv,null,Modifier.size(18.dp));Text("  TV → Phone",fontSize=12.sp)};OutlinedButton(onClick={dialog="cast"},modifier=Modifier.weight(1f),shape=RoundedCornerShape(12.dp)){Text("Phone → TV",fontSize=12.sp)}}
                     Surface(color=Pale,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,Border)){Column(Modifier.fillMaxWidth().height(210.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Icon(Icons.Default.Tv,null,Modifier.size(54.dp),tint=Muted);Spacer(Modifier.height(12.dp));Text(if(connected)status.deviceName?:"TV screen" else "Your screen, right here",fontWeight=FontWeight.SemiBold);Text("Connect an Android TV to begin.",fontSize=12.sp,color=Muted)}}
-                    OutlinedButton(onClick={if(requireTv())detail="preview"},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
-                        Icon(Icons.Default.Fullscreen,null);Text("Live mirror · Stable full screen")
+                    OutlinedButton(onClick={if(requireTv()){
+                        val intent=Intent(context,DoupadMirrorActivity::class.java).putExtra("endpoint",status.address)
+                        context.startActivity(intent)
+                    }},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
+                        Icon(Icons.Default.Fullscreen,null);Text("Live video · H.264 low-latency")
                     }
                     Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Quick("Screenshot",Icons.Default.PhotoCamera,Modifier.weight(1f)){if(requireTv()){detail="preview"}};Quick("Record",Icons.Default.FiberManualRecord,Modifier.weight(1f)){dialog="record"}}
-                    Text("Video quality",fontWeight=FontWeight.SemiBold);Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("Auto","720p","1080p").forEach{q->FilterChip(selected=q=="Auto",onClick={message("This beta uses adaptive 1280-pixel video, up to 30 fps.")},label={Text(q)})}}
+                    Text("Video streaming",fontWeight=FontWeight.SemiBold);Text("Hardware-decoded H.264 • up to 30 fps • adaptive setup",fontSize=12.sp,color=Muted)
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Column{Text("Include TV audio",fontWeight=FontWeight.SemiBold);Text("Video-only in this beta",fontSize=12.sp,color=Muted)};Switch(checked=false,onCheckedChange={message("Audio forwarding is not enabled in this beta.")})}
                     Hint("Availability depends on the device. Protected video may appear blank.")
                 }
