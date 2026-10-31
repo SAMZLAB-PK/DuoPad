@@ -9,6 +9,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,6 +38,7 @@ import kotlinx.coroutines.launch
 fun AndroidMousePadScreen(
     onBack: () -> Unit,
     airMouse: Boolean = false,
+    onSwipeMode: (Int) -> Unit = {},
     viewModel: MainViewModel = hiltViewModel()
 ) {
     val scope = rememberCoroutineScope()
@@ -44,6 +46,7 @@ fun AndroidMousePadScreen(
     val sensorManager = remember(context) { context.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
     val gyro = remember(sensorManager) { sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE) }
     var motionEnabled by remember(airMouse) { mutableStateOf(airMouse) }
+    var headerSwipe by remember { mutableFloatStateOf(0f) }
     val latestPosition = remember { LatestPositionBuffer() }
     var screenW by remember { mutableIntStateOf(1920) }
     var screenH by remember { mutableIntStateOf(1080) }
@@ -153,6 +156,17 @@ fun AndroidMousePadScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
+                modifier = Modifier.pointerInput(airMouse) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { headerSwipe = 0f },
+                        onHorizontalDrag = { _, amount -> headerSwipe += amount },
+                        onDragEnd = {
+                            if (headerSwipe < -90f) onSwipeMode(1)
+                            else if (headerSwipe > 90f) onSwipeMode(-1)
+                            headerSwipe = 0f
+                        }
+                    )
+                },
                 title = {
                     Column {
                         Text(if (airMouse) "Air Mouse" else "Mouse Pad", fontWeight = FontWeight.Bold)
