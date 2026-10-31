@@ -12,10 +12,10 @@ assert 'AdbCommand.PointerClick' in mouse, 'mouse clicks must use realtime point
 assert 'AdbCommand.PointerScroll' in mouse, 'scroll must use realtime pointer command'
 assert 'input mouse motionevent MOVE' not in mouse, 'mouse screen must not shell each move'
 
-assert 'control=true' in mirror and 'control=false' not in mirror, 'mirror must enable scrcpy control'
-assert 'max_fps=30' in mirror, 'mirror must use the smooth 30 fps TV profile'
-assert 'video_bit_rate=4000000' in mirror, 'mirror must use a 4 Mbps target bitrate'
-assert 'current.control=adb.open("localabstract:scrcpy_$id")' in mirror.replace(' ', ''), 'mirror must open second control socket'
+assert 'VideoProfile(960, 24, 2_000_000, true)' in mirror and 'VideoProfile(720, 15, 1_200_000, false)' in mirror, 'mirror must support video+control and video-only fallback'
+assert 'max_fps=${profile.fps}' in mirror, 'mirror must configure adaptive frame rate'
+assert 'video_bit_rate=${profile.bitRate}' in mirror, 'mirror must configure adaptive target bitrate'
+assert 'current.control=adb.open("localabstract:scrcpy_$id")' in mirror.replace(' ', ''), 'mirror must open control socket where supported'
 assert 'setOnTouchListener' in mirror, 'mirror surface must send touch events'
 assert 'ScrcpyControlProtocol.touch' in mirror, 'mirror must serialize touch via scrcpy protocol'
 
