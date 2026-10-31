@@ -197,55 +197,86 @@ fun AndroidGamepadScreen(
     viewModel: MainViewModel = hiltViewModel()
 ) {
     fun key(code: Int) = viewModel.executeAdb(AdbCommand.InputKey(code))
-    @Composable fun GameButton(label: String, code: Int, modifier: Modifier = Modifier) {
-        FilledTonalButton(onClick = { key(code) }, modifier = modifier.size(68.dp), shape = CircleShape) {
-            Text(label, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        }
-    }
+    val ink = Color(0xFF102033)
+    val teal = Color(0xFF008C91)
+
     Scaffold(
+        containerColor = Color(0xFFFBFCFD),
         topBar = {
             TopAppBar(
-                title = { Column { Text("Gamepad", fontWeight = FontWeight.Bold); Text("Android TV / Box", fontSize = 11.sp) } },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }
+                title = { Column { Text("Gamepad", fontWeight = FontWeight.Bold, color = ink); Text("Android TV / Box", fontSize = 11.sp) } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
             )
         }
     ) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                OutlinedButton(onClick = { key(102) }) { Text("L1") }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { key(109) }) { Text("SELECT") }
-                    OutlinedButton(onClick = { key(108) }) { Text("START") }
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp, vertical = 8.dp)) {
+            val portrait = maxHeight > maxWidth
+            val wheel = minOf(maxWidth * (if (portrait) 0.44f else 0.34f), maxHeight * 0.56f, 206.dp)
+            val faceKey = minOf(wheel * 0.31f, 52.dp)
+            val arrowKey = minOf(wheel * 0.32f, 56.dp)
+            Column(Modifier.fillMaxSize(),verticalArrangement = Arrangement.SpaceBetween) {
+                Row(
+                    Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(onClick = { key(102) },contentPadding=PaddingValues(horizontal=10.dp)) { Text("L1",fontSize=12.sp) }
+                    TextButton(onClick = { key(109) },contentPadding=PaddingValues(horizontal=3.dp)) { Text("SELECT",fontSize=11.sp) }
+                    TextButton(onClick = { key(108) },contentPadding=PaddingValues(horizontal=3.dp)) { Text("START",fontSize=11.sp) }
+                    OutlinedButton(onClick = { key(103) },contentPadding=PaddingValues(horizontal=10.dp)) { Text("R1",fontSize=12.sp) }
                 }
-                OutlinedButton(onClick = { key(103) }) { Text("R1") }
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f).aspectRatio(1f), contentAlignment = Alignment.Center) {
-                    Surface(Modifier.fillMaxSize(0.9f), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {}
-                    IconButton(onClick = { key(19) }, modifier = Modifier.align(Alignment.TopCenter).size(72.dp)) { Icon(Icons.Default.KeyboardArrowUp, "Up", Modifier.size(42.dp)) }
-                    IconButton(onClick = { key(20) }, modifier = Modifier.align(Alignment.BottomCenter).size(72.dp)) { Icon(Icons.Default.KeyboardArrowDown, "Down", Modifier.size(42.dp)) }
-                    IconButton(onClick = { key(21) }, modifier = Modifier.align(Alignment.CenterStart).size(72.dp)) { Icon(Icons.Default.KeyboardArrowLeft, "Left", Modifier.size(42.dp)) }
-                    IconButton(onClick = { key(22) }, modifier = Modifier.align(Alignment.CenterEnd).size(72.dp)) { Icon(Icons.Default.KeyboardArrowRight, "Right", Modifier.size(42.dp)) }
-                    FilledIconButton(onClick = { key(23) }, modifier = Modifier.size(74.dp)) { Text("OK", fontWeight = FontWeight.Bold) }
+
+                Row(
+                    Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(wheel),contentAlignment=Alignment.Center) {
+                        Surface(Modifier.fillMaxSize(),shape=CircleShape,color=Color(0xFFE9F0F5)) { }
+                        IconButton(onClick={key(19)},modifier=Modifier.align(Alignment.TopCenter).size(arrowKey)){
+                            Icon(Icons.Default.KeyboardArrowUp,"Up",Modifier.size(32.dp),tint=ink)
+                        }
+                        IconButton(onClick={key(20)},modifier=Modifier.align(Alignment.BottomCenter).size(arrowKey)){
+                            Icon(Icons.Default.KeyboardArrowDown,"Down",Modifier.size(32.dp),tint=ink)
+                        }
+                        IconButton(onClick={key(21)},modifier=Modifier.align(Alignment.CenterStart).size(arrowKey)){
+                            Icon(Icons.Default.KeyboardArrowLeft,"Left",Modifier.size(32.dp),tint=ink)
+                        }
+                        IconButton(onClick={key(22)},modifier=Modifier.align(Alignment.CenterEnd).size(arrowKey)){
+                            Icon(Icons.Default.KeyboardArrowRight,"Right",Modifier.size(32.dp),tint=ink)
+                        }
+                        FilledIconButton(onClick={key(23)},modifier=Modifier.size(wheel*0.36f),
+                            colors=IconButtonDefaults.filledIconButtonColors(containerColor=teal)){
+                            Text("OK",color=Color.White,fontWeight=FontWeight.Bold,fontSize=15.sp)
+                        }
+                    }
+                    Box(Modifier.size(wheel),contentAlignment=Alignment.Center) {
+                        listOf(
+                            Triple("Y",100,Alignment.TopCenter),
+                            Triple("A",96,Alignment.BottomCenter),
+                            Triple("X",99,Alignment.CenterStart),
+                            Triple("B",97,Alignment.CenterEnd)
+                        ).forEach { (name,code,position) ->
+                            FilledIconButton(
+                                onClick={key(code)},modifier=Modifier.align(position).size(faceKey),
+                                colors=IconButtonDefaults.filledIconButtonColors(
+                                    containerColor=when(name){"A"->Color(0xFFDCF5EB);"B"->Color(0xFFFFE6E7);"X"->Color(0xFFDEEDF9);else->Color(0xFFF7EACD)},
+                                    contentColor=ink
+                                )
+                            ) { Text(name,fontWeight=FontWeight.Bold,fontSize=15.sp) }
+                        }
+                    }
                 }
-                Box(Modifier.weight(1f).aspectRatio(1f), contentAlignment = Alignment.Center) {
-                    GameButton("Y", 100, Modifier.align(Alignment.TopCenter))
-                    GameButton("A", 96, Modifier.align(Alignment.BottomCenter))
-                    GameButton("X", 99, Modifier.align(Alignment.CenterStart))
-                    GameButton("B", 97, Modifier.align(Alignment.CenterEnd))
+
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly) {
+                    OutlinedButton(onClick={key(4)}) { Icon(Icons.AutoMirrored.Filled.ArrowBack,null);Spacer(Modifier.width(4.dp));Text("Back") }
+                    OutlinedButton(onClick={key(3)}) { Icon(Icons.Default.Home,null);Spacer(Modifier.width(4.dp));Text("Home") }
+                    OutlinedButton(onClick={key(82)}) { Icon(Icons.Default.Menu,null);Spacer(Modifier.width(4.dp));Text("Menu") }
                 }
+                Text(
+                    "Works with Android keycodes. Some games require a paired HID gamepad.",
+                    fontSize=11.sp,color=Color(0xFF667587),modifier=Modifier.fillMaxWidth()
+                )
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                OutlinedButton(onClick = { key(4) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null); Spacer(Modifier.width(6.dp)); Text("Back") }
-                OutlinedButton(onClick = { key(3) }) { Icon(Icons.Default.Home, null); Spacer(Modifier.width(6.dp)); Text("Home") }
-            }
-            Text(
-                "Game compatibility depends on how the TV/Box maps Android game keycodes.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
