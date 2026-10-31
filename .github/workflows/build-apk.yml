@@ -83,6 +83,7 @@ jobs:
           python3 verification/test_realtime_source.py
           python3 verification/test_engine4_source.py
           python3 verification/test_samz_link_connectivity.py
+          python3 verification/test_samz_link_v03.py
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
