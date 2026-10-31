@@ -308,10 +308,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             if (error != null) failure(ticket, error)
             if (index == profiles.lastIndex) {
                 show(ticket,
-                    "Live video unavailable: $detail. Use Screenshot for this TV, or retry with a supported encoder."
+                    "Live video unavailable: $detail. Open Mirror diagnostics for packet and encoder details."
                 )
             } else {
-                show(ticket, "Video mode failed; trying compatibility stream (720p / video-only)…")
+                show(ticket, "No first frame; trying alternate stream profile (720p)…")
                 Thread.sleep(450)
             }
         }
@@ -348,6 +348,33 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                     "video_bit_rate=${profile.bitRate} cleanup=true"
             checkpoint(ticket, "Starting device-side video encoder")
             current.server = adb.open("shell:$command")
+            // ADB shell is its own stream. Draining the server's stdout/stderr
+            // prevents ADB backpressure and records actual encoder failures.
+            thread(name = "doupad-scrcpy-server-output", isDaemon = true) {
+                try {
+                    val serverSource = current.server?.source ?: return@thread
+                    var observed = 0
+                    while (!current.closed && generation.get() == ticket) {
+                        val line = serverSource.readUtf8Line() ?: break
+                        if (line.isNotBlank()) {
+                            if (observed++ < 30 || line.contains("error", true) ||
+                                line.contains("exception", true) || line.contains("failed", true)) {
+                                MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                    "SERVER: " + line.take(380))
+                            }
+                        }
+                    }
+                    if (!current.closed && generation.get() == ticket) {
+                        MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                            "SERVER_STREAM_ENDED: device-side scrcpy process closed its shell output")
+                    }
+                } catch (error: Exception) {
+                    if (!current.closed && generation.get() == ticket) {
+                        MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                            "SERVER_LOG_READ_ERROR: ${error.javaClass.simpleName}: ${error.message}")
+                    }
+                }
+            }
 
             checkpoint(ticket, "Opening H.264 video socket")
             for (attempt in 0 until 30) {
@@ -420,7 +447,28 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             codec.configure(format, holder.surface, null, 0)
             codec.start()
             val firstFrame = AtomicBoolean(false)
+            val packetCount = AtomicInteger(0)
+            val configCount = AtomicInteger(0)
+            val queuedCount = AtomicInteger(0)
+            val renderedCount = AtomicInteger(0)
             checkpoint(ticket, "Waiting for first decoded video frame")
+            // A readable codec header is NOT proof that a single H.264 frame
+            // was produced. Abort and try a second profile instead of hanging.
+            thread(name = "doupad-first-frame-watchdog", isDaemon = true) {
+                try {
+                    Thread.sleep(12000)
+                    if (!current.closed && generation.get() == ticket && !firstFrame.get()) {
+                        val snapshot = "FIRST_FRAME_TIMEOUT after 12s: packets=${packetCount.get()}, " +
+                            "config=${configCount.get()}, queued=${queuedCount.get()}, " +
+                            "rendered=${renderedCount.get()}"
+                        MirrorCrashRecorder.note(this@DoupadMirrorActivity, snapshot)
+                        show(ticket, snapshot + " • switching compatibility profile")
+                        current.close()
+                    }
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+            }
 
             drain = thread(name = "doupad-video-output") {
                 val info = MediaCodec.BufferInfo()
@@ -429,8 +477,11 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                         val index = codec.dequeueOutputBuffer(info, 10000)
                         if (index >= 0) {
                             codec.releaseOutputBuffer(index, true)
+                            renderedCount.incrementAndGet()
                             if (firstFrame.compareAndSet(false, true)) {
-                                Log.i("DouPadMirror", "H.264 first video frame rendered")
+                                MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                    "FIRST_FRAME_RENDERED: packets=${packetCount.get()}, " +
+                                        "queued=${queuedCount.get()}, output=${renderedCount.get()}")
                                 runOnUiThread {
                                     if (generation.get() == ticket) status.visibility = View.GONE
                                 }
@@ -447,6 +498,14 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 val meta = source.readLong()
                 val size = source.readInt()
                 require(size in 1..16777216) { "Invalid video packet" }
+                val packetNumber = packetCount.incrementAndGet()
+                val configPacket = meta < 0
+                val keyFrame = (meta and (1L shl 62)) != 0L
+                if (configPacket) configCount.incrementAndGet()
+                if (packetNumber <= 5 || packetNumber % 100 == 0) {
+                    MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                        "VIDEO_PACKET #$packetNumber size=$size config=$configPacket key=$keyFrame")
+                }
                 val bytes = source.readByteArray(size.toLong())
                 var index = -1
                 while (index < 0 && !current.closed && generation.get() == ticket) {
@@ -462,8 +521,15 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                     0,
                     size,
                     meta and 0x3fffffffffffffffL,
-                    if (meta < 0) MediaCodec.BUFFER_FLAG_CODEC_CONFIG else 0
+                    if (configPacket) MediaCodec.BUFFER_FLAG_CODEC_CONFIG else
+                        if (keyFrame) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
                 )
+                queuedCount.incrementAndGet()
+            }
+            if (generation.get() == ticket && !firstFrame.get()) {
+                throw IOException("No decoded frame: packets=${packetCount.get()}, " +
+                    "config=${configCount.get()}, queued=${queuedCount.get()}, " +
+                    "rendered=${renderedCount.get()}")
             }
         } catch (e: Exception) {
             if (generation.get() == ticket) {
