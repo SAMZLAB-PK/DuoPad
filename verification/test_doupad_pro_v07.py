@@ -10,8 +10,11 @@ assert 'KEY_LOW_LATENCY' in video
 assert 'AtomicBoolean(false)' in video
 assert 'firstFrame.compareAndSet(false, true)' in video
 assert 'doupad_mirror_diagnostics.txt' in video
+assert 'archiveLocks' in (root/"app/src/main/java/com/unipoint/data/remote/AdbDataSource.kt").read_text()
+assert 'Dadb.create(host, lastConnectedPort, keys' in (root/"app/src/main/java/com/unipoint/data/remote/AdbDataSource.kt").read_text()
 assert 'setOnLongClickListener' in video
 assert 'fun DeviceInfoProScreen(' in screen
+assert 'MirrorDiagnosticsScreen' in ui
 assert 'Detail("ram"' in screen
 assert 'Detail("ip"' in screen
 assert '"infoFull"->{DeviceInfoProScreen' in ui
