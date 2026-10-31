@@ -46,7 +46,8 @@ class AdbDataSource constructor(
     private var cachedKeyPair: AdbKeyPair? = null
     private val adbMutex = Mutex()
     private val controlMutex = Mutex()
-    private val archiveMutex = Mutex()
+    // Concurrent icon downloads must not share one global archive lock.
+    private val archiveLocks = ConcurrentHashMap<String, Mutex>()
     @Volatile private var realtimeControl: AdbStream? = null
     @Volatile private var realtimeServer: AdbStream? = null
     @Volatile private var realtimeRetryAfterMs: Long = 0L
@@ -648,20 +649,43 @@ class AdbDataSource constructor(
         Result.success(path)
     }
 
-    private suspend fun ensureArchive(packageName: String): Result<File> = archiveMutex.withLock {
-        val safe = packageName.replace(Regex("[^A-Za-z0-9_.-]"), "_")
-        val apk = File(context.cacheDir, "apk-cache/$safe.apk").apply { parentFile?.mkdirs() }
-        if (apk.exists() && apk.length() > 1024) return@withLock Result.success(apk)
-        val remote = apkRemotePath(packageName).getOrElse { return@withLock Result.failure(it) }
-        pull(remote, apk.absolutePath).getOrElse {
-            apk.delete()
-            return@withLock Result.failure(it)
+    private suspend fun ensureArchive(packageName: String): Result<File> {
+        val lock = archiveLocks.computeIfAbsent(packageName) { Mutex() }
+        return lock.withLock {
+            val safe = packageName.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+            val apk = File(context.cacheDir, "apk-cache/$safe.apk").apply { parentFile?.mkdirs() }
+            if (apk.exists() && apk.length() > 1024) return@withLock Result.success(apk)
+            val remote = apkRemotePath(packageName).getOrElse { return@withLock Result.failure(it) }
+            val host = lastConnectedIp
+            val keys = keyPairOrNull()
+
+            // Do not hold the interactive main ADB transport while pulling a large APK.
+            // This session reuses the same already authorized RSA key (no scan/auth popup).
+            val dedicated = if (host != null && keys != null) withContext(Dispatchers.IO) {
+                runCatching {
+                    val transfer = Dadb.create(host, lastConnectedPort, keys, 3500, 15000)
+                    try {
+                        transfer.pull(apk, remote)
+                    } finally {
+                        transfer.close()
+                    }
+                }
+            } else Result.failure(Exception("Dedicated transfer unavailable"))
+
+            if (dedicated.isFailure) {
+                // Compatibility fallback for TV ROMs that reject a second ADB session.
+                apk.delete()
+                pull(remote, apk.absolutePath).getOrElse {
+                    apk.delete()
+                    return@withLock Result.failure(it)
+                }
+            }
+            if (apk.length() <= 1024) {
+                apk.delete()
+                return@withLock Result.failure(Exception("Downloaded APK is empty"))
+            }
+            Result.success(apk)
         }
-        if (apk.length() <= 1024) {
-            apk.delete()
-            return@withLock Result.failure(Exception("Downloaded APK is empty"))
-        }
-        Result.success(apk)
     }
 
     suspend fun appPresentation(packageName: String): Result<AppPresentation> = withContext(Dispatchers.IO) {
