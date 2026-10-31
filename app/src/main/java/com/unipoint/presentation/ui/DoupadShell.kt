@@ -9,6 +9,7 @@ import android.os.Build
 import android.graphics.BitmapFactory
 import android.speech.RecognizerIntent
 import android.content.Intent
+import com.unipoint.core.util.MirrorCrashRecorder
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -472,10 +473,24 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     Title("Screen mirror","View your device screen in real time.")
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){Button(onClick={},modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(12.dp)){Icon(Icons.Default.Tv,null,Modifier.size(18.dp));Text("  TV → Phone",fontSize=12.sp)};OutlinedButton(onClick={dialog="cast"},modifier=Modifier.weight(1f),shape=RoundedCornerShape(12.dp)){Text("Phone → TV",fontSize=12.sp)}}
                     Surface(color=Pale,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,Border)){Column(Modifier.fillMaxWidth().height(210.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Icon(Icons.Default.Tv,null,Modifier.size(54.dp),tint=Muted);Spacer(Modifier.height(12.dp));Text(if(connected)status.deviceName?:"TV screen" else "Your screen, right here",fontWeight=FontWeight.SemiBold);Text("Connect an Android TV to begin.",fontSize=12.sp,color=Muted)}}
-                    OutlinedButton(onClick={if(requireTv()){
-                        val intent=Intent(context,DoupadMirrorActivity::class.java).putExtra("endpoint",status.address)
-                        context.startActivity(intent)
-                    }},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
+                    OutlinedButton(onClick={
+                        if(requireTv()) {
+                            val endpoint = status.address
+                            // Write a durable breadcrumb before the Android Activity launch.
+                            // This survives a fatal native-video decoder crash on the next app start.
+                            MirrorCrashRecorder.launch(context, !endpoint.isNullOrBlank())
+                            try {
+                                val intent=Intent(context,DoupadMirrorActivity::class.java)
+                                    .putExtra("endpoint",endpoint)
+                                context.startActivity(intent)
+                            } catch (error: Exception) {
+                                MirrorCrashRecorder.note(context,
+                                    "START_ACTIVITY_FAILED: ${error.javaClass.simpleName}: ${error.message}")
+                                MirrorCrashRecorder.finish(context,"launch failed")
+                                message("Unable to open mirror: ${error.message}")
+                            }
+                        }
+                    },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
                         Icon(Icons.Default.Fullscreen,null);Text("Live video · H.264 low-latency")
                     }
                     Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Quick("Screenshot",Icons.Default.PhotoCamera,Modifier.weight(1f)){if(requireTv()){detail="preview"}};Quick("Record",Icons.Default.FiberManualRecord,Modifier.weight(1f)){dialog="record"}}
