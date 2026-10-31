@@ -23,6 +23,7 @@ import dadb.AdbKeyPair
 import dadb.AdbStream
 import dadb.Dadb
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
@@ -187,10 +188,19 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         inputWorker.execute {
             if (current.closed || session !== current) return@execute
             try {
-                current.control?.sink?.write(packet)
-                current.control?.sink?.flush()
-            } catch (_: Exception) {
-                current.close()
+                if (current.control != null) {
+                    current.control?.sink?.write(packet)
+                    current.control?.sink?.flush()
+                } else if (action == ScrcpyControlProtocol.ACTION_UP) {
+                    // Video-only fallback retains tap support without another scrcpy socket.
+                    current.adb.shell("input tap ${point.x} ${point.y}")
+                }
+            } catch (e: Exception) {
+                if (current.control != null) {
+                    // Keep the video stream alive if only the control channel fails.
+                    runCatching { current.control?.close() }
+                    current.control = null
+                }
             }
         }
     }
@@ -219,7 +229,37 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         super.onDestroy()
     }
 
+    private data class VideoProfile(
+        val maxSize: Int, val fps: Int, val bitRate: Int, val control: Boolean
+    )
+
     private fun stream(holder: SurfaceHolder, ticket: Int) {
+        // Second preset deliberately disables scrcpy control socket. Some Android TV
+        // firmware streams video reliably but rejects the second abstract socket.
+        val profiles = listOf(
+            VideoProfile(960, 24, 2_000_000, true),
+            VideoProfile(720, 15, 1_200_000, false)
+        )
+        for ((index, profile) in profiles.withIndex()) {
+            if (generation.get() != ticket) return
+            val result = runCatching { streamAttempt(holder, ticket, profile) }
+            if (generation.get() != ticket) return
+            if (result.isSuccess) return
+            val error = result.exceptionOrNull()
+            val detail = error?.message ?: error?.javaClass?.simpleName ?: "Unknown video error"
+            android.util.Log.w("DouPadVideo", "Video profile ${index + 1} failed: $detail", error)
+            if (index == profiles.lastIndex) {
+                show(ticket,
+                    "Live video unavailable: $detail. Use Screenshot for this TV, or retry with a supported encoder."
+                )
+            } else {
+                show(ticket, "Video mode failed; trying compatibility stream (720p / video-only)…")
+                Thread.sleep(450)
+            }
+        }
+    }
+
+    private fun streamAttempt(holder: SurfaceHolder, ticket: Int, profile: VideoProfile) {
         var own: Session? = null
         var drain: Thread? = null
         try {
@@ -229,7 +269,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             val port = endpoint.substringAfter(':', "5555").toInt()
             val keyDir = File(filesDir, "adb")
             val keys = AdbKeyPair.read(File(keyDir, "adbkey"), File(keyDir, "adbkey.pub"))
-            val adb = Dadb.create(host, port, keys, connectTimeout = 5000, socketTimeout = 10000)
+            val adb = Dadb.create(host, port, keys, connectTimeout = 5000, socketTimeout = 30000)
             val current = Session(adb)
             own = current
             session = current
@@ -243,9 +283,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             val id = "%08x".format(java.security.SecureRandom().nextInt(Int.MAX_VALUE))
             val command =
                 "CLASSPATH=/data/local/tmp/doupad-mirror.jar app_process / com.genymobile.scrcpy.Server 3.3.1 " +
-                    "scid=$id log_level=warn video=true audio=false control=true tunnel_forward=true " +
+                    "scid=$id log_level=warn video=true audio=false control=${profile.control} tunnel_forward=true " +
                     "send_dummy_byte=false send_device_meta=false send_codec_meta=true send_frame_meta=true " +
-                    "video_codec=h264 max_size=1280 max_fps=30 video_bit_rate=4000000 cleanup=true"
+                    "video_codec=h264 max_size=${profile.maxSize} max_fps=${profile.fps} " +
+                    "video_bit_rate=${profile.bitRate} cleanup=true"
             current.server = adb.open("shell:$command")
 
             for (attempt in 0 until 30) {
@@ -258,21 +299,22 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                     Thread.sleep(100)
                 }
             }
-            // scrcpy opens sockets in video -> audio -> control order. Audio is disabled,
-            // so this second connection is the dedicated binary control channel.
-            for (attempt in 0 until 30) {
-                if (current.closed || generation.get() != ticket) return
-                try {
-                    current.control = adb.open("localabstract:scrcpy_$id")
-                    break
-                } catch (e: Exception) {
-                    if (attempt == 29) throw e
-                    Thread.sleep(100)
+            if (profile.control) {
+                // Video and control are separate sockets. Keep the fallback video-only.
+                for (attempt in 0 until 30) {
+                    if (current.closed || generation.get() != ticket) return
+                    try {
+                        current.control = adb.open("localabstract:scrcpy_$id")
+                        break
+                    } catch (e: Exception) {
+                        if (attempt == 29) throw e
+                        Thread.sleep(100)
+                    }
                 }
             }
 
             val source = current.video?.source ?: error("TV video socket unavailable")
-            check(current.control != null) { "TV control socket unavailable" }
+            if (profile.control) check(current.control != null) { "TV control socket unavailable" }
             val codecId = source.readInt()
             val width = source.readInt()
             val height = source.readInt()
@@ -333,10 +375,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 )
             }
         } catch (e: Exception) {
-            show(
-                ticket,
-                "Mirror stopped: ${e.message ?: e.javaClass.simpleName}. Check TV authorization and try again."
-            )
+            if (generation.get() == ticket) {
+                throw IOException("Video pipeline: ${e.message ?: e.javaClass.simpleName}", e)
+            }
         } finally {
             own?.close()
             drain?.join(1000)
