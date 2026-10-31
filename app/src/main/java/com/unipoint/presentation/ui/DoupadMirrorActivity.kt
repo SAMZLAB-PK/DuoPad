@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui
 
 import android.app.Activity
+import com.unipoint.core.util.MirrorCrashRecorder
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
@@ -85,9 +86,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Select landscape before SurfaceView creation so video is not torn down
-        // halfway through an active MediaCodec session by a late rotation request.
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // Never force orientation during startup: some Android 15/16 device
+        // configurations reject an orientation request before the first draw.
+        MirrorCrashRecorder.started(this)
         enterImmersive()
 
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
@@ -242,8 +243,12 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         val ticket = generation.incrementAndGet()
+        MirrorCrashRecorder.note(this,"SURFACE_CREATED: surface ready; starting worker ticket=$ticket")
         runCatching { worker.execute { stream(holder, ticket) } }
-            .onFailure { show(ticket, "Mirror surface unavailable: ${it.message}") }
+            .onFailure {
+                MirrorCrashRecorder.note(this,"WORKER_START_FAILED: ${it.javaClass.simpleName}: ${it.message}")
+                show(ticket, "Mirror surface unavailable: ${it.message}")
+            }
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -261,6 +266,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         session?.close()
         inputWorker.shutdownNow()
         worker.shutdownNow()
+        MirrorCrashRecorder.finish(this, "Mirror Activity onDestroy")
         super.onDestroy()
     }
 
