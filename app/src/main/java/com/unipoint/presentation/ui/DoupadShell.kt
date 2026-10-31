@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -266,7 +267,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                         Quick("Send files",Icons.AutoMirrored.Filled.Send,Modifier.weight(1f)){openNearby("Send files")}
                         Quick("Install APK",Icons.Default.InstallMobile,Modifier.weight(1f)){openNearby("Install APK")}
                     }
-                    Hint("Bluetooth Direct needs no PC app. Wi-Fi control uses SAMZ Link Host on the same network.")
+                    Hint("Bluetooth Direct needs no PC app. Wi-Fi control uses DouPad Pro Host on the same network.")
                 }
                 4->{
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
@@ -479,14 +480,14 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                                         Icon(Icons.Default.Bluetooth,null,tint=Teal)
                                         Column { Text("Bluetooth Direct",fontWeight=FontWeight.Bold);Text("No PC app required",fontSize=12.sp,color=Teal) }
                                     }
-                                    Text("Pair this phone from Windows, macOS or Linux Bluetooth settings. SAMZ Link acts as a mouse + keyboard.",fontSize=12.sp,color=Muted)
+                                    Text("Pair this phone from Windows, macOS or Linux Bluetooth settings. DouPad Pro acts as a mouse + keyboard.",fontSize=12.sp,color=Muted)
                                     Button(onClick={startBluetoothDirect()},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Start Bluetooth Direct")}
                                 }
                             }
                         } else {
                             if(state.isScanningPc) {
                                 LinearProgressIndicator(Modifier.fillMaxWidth())
-                                Text("Looking for SAMZ Link Host on your network…",fontSize=12.sp,color=Muted)
+                                Text("Looking for DouPad Pro Host on your network…",fontSize=12.sp,color=Muted)
                             }
                             state.pcDevices.take(6).forEach { host ->
                                 OutlinedButton(onClick={
@@ -502,13 +503,13 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                             if(!state.isScanningPc && state.pcDevices.none { it.isReachable }) {
                                 Surface(shape=RoundedCornerShape(14.dp),color=Pale,border=BorderStroke(1.dp,Border)) {
                                     Column(Modifier.fillMaxWidth().padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        Text("SAMZ Link Host required for Wi-Fi",fontWeight=FontWeight.Bold)
-                                        Text("Bluetooth Direct works without any PC software. For Wi-Fi control, run the small SAMZ Link Host on Windows, macOS or Linux.",fontSize=12.sp,color=Muted)
+                                        Text("DouPad Pro Host required for Wi-Fi",fontWeight=FontWeight.Bold)
+                                        Text("Bluetooth Direct works without any PC software. For Wi-Fi control, run the small DouPad Pro Host on Windows, macOS or Linux.",fontSize=12.sp,color=Muted)
                                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                             OutlinedButton(onClick={vm.scanPc()},modifier=Modifier.weight(1f)){Text("Scan again")}
                                             Button(onClick={
                                                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.HOST_RELEASES_URL))) }
-                                                    .onFailure { message("Could not open the SAMZ Link Host download page.") }
+                                                    .onFailure { message("Could not open the DouPad Pro Host download page.") }
                                             },modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Get Host")}
                                         }
                                         TextButton(onClick={pcTransport="bluetooth"},modifier=Modifier.fillMaxWidth()){Text("Use Bluetooth Direct instead")}
@@ -585,7 +586,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                         val noAndroid=scanFilter=="PC" || state.androidDevices.isEmpty()
                         val noPc=scanFilter=="Android" || state.pcDevices.isEmpty()
                         if(noAndroid&&noPc) Text(
-                            "No compatible devices found. TVs need an authorized ADB endpoint; Windows PCs need SAMZ Link/DOUPAD Host running.",
+                            "No compatible devices found. TVs need an authorized ADB endpoint; Windows PCs need DouPad Pro Host running.",
                             fontSize=12.sp,color=Muted
                         )
                     }
