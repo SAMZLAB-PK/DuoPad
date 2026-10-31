@@ -20,9 +20,10 @@ assert 'ensureUhidMouseLocked' in adb, 'realtime input must initialize UHID mous
 assert 'ScrcpyControlProtocol.uhidInput' in adb, 'mouse moves must send relative UHID reports'
 assert 'ScrcpyControlProtocol.touch' in adb, 'SDK/touch fallback must remain available'
 
-# Smooth default mirror: one H.264 pipeline, conservative 30fps/4Mbps baseline and immersive UI.
-assert 'max_fps=30' in mirror
-assert 'video_bit_rate=4000000' in mirror
+# Adaptive H.264 pipeline uses 960p/24fps then 720p/15fps compatibility fallback.
+assert 'max_fps=${profile.fps}' in mirror
+assert 'video_bit_rate=${profile.bitRate}' in mirror
+assert 'VideoProfile(720, 15, 1_200_000, false)' in mirror
 assert 'WindowInsets.Type.systemBars()' in mirror
 assert 'SYSTEM_UI_FLAG_IMMERSIVE_STICKY' in mirror
 
