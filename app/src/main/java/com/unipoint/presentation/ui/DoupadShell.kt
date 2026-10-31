@@ -263,7 +263,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     }
                     Surface(color=Color(0xFFEFFAFA),shape=RoundedCornerShape(12.dp)) {
                         Row(Modifier.fillMaxWidth().padding(13.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                            Icon(Icons.Default.LockOutline,null,Modifier.size(18.dp),tint=Teal)
+                            Icon(Icons.Default.Lock,null,Modifier.size(18.dp),tint=Teal)
                             Text("Scanning never requests USB debugging authorization. Only connecting to your selected Android device can trigger its approval prompt.",fontSize=12.sp,color=Ink)
                         }
                     }
