@@ -20,6 +20,8 @@ import com.unipoint.domain.model.AdbCommand
 import com.unipoint.domain.model.InstalledApp
 import com.unipoint.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +35,9 @@ fun AppManagerScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val iconPaths = remember { mutableStateMapOf<String, String>() }
+    val enrichment = remember { mutableStateMapOf<String, Boolean>() }
+    val queue = remember { Semaphore(2) }
+    var enrichmentDone by remember { mutableIntStateOf(0) }
     var downloading by remember { mutableStateOf<String?>(null) }
     var uninstallTarget by remember { mutableStateOf<InstalledApp?>(null) }
 
@@ -41,7 +46,10 @@ fun AppManagerScreen(
         scope.launch {
             loading = true
             viewModel.listApps()
-                .onSuccess { apps = it.sortedBy { a -> a.label.lowercase() } }
+                .onSuccess { result ->
+                    apps = result.sortedBy { a -> a.label.lowercase() }
+                    // Initial list is already useful; heavy icon sync must never block it.
+                }
                 .onFailure { snackbar.showSnackbar(it.message ?: "Failed") }
             loading = false
         }
@@ -101,22 +109,35 @@ fun AppManagerScreen(
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal=16.dp, vertical=8.dp),
                 singleLine = true
             )
 
             if (loading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
+                LinearProgressIndicator(Modifier.fillMaxWidth())
             } else {
+                Text(
+                    "${apps.size} apps · ${enrichmentDone.coerceAtMost(apps.size)} icon/name checks complete",
+                    modifier=Modifier.padding(horizontal=16.dp,vertical=2.dp),
+                    style=MaterialTheme.typography.labelSmall,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 LazyColumn {
                     items(filtered, key = { it.packageName }) { app ->
                         LaunchedEffect(app.packageName) {
-                            if (!iconPaths.containsKey(app.packageName) || app.versionName == null) {
-                                viewModel.loadAppPresentation(app.packageName)?.let { presentation ->
-                                    apps = apps.map { if (it.packageName == presentation.app.packageName) presentation.app else it }
-                                    presentation.iconPath?.let { iconPaths[app.packageName] = it }
+                            val packageId = app.packageName
+                            if (enrichment.put(packageId, true) == null) {
+                                queue.withPermit {
+                                    try {
+                                        viewModel.loadAppPresentation(packageId)?.let { presentation ->
+                                            apps = apps.map { item ->
+                                                if (item.packageName == packageId) presentation.app else item
+                                            }
+                                            presentation.iconPath?.let { iconPaths[packageId] = it }
+                                        }
+                                    } finally {
+                                        enrichmentDone++
+                                    }
                                 }
                             }
                         }
@@ -136,9 +157,9 @@ fun AppManagerScreen(
                                     path?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
                                 }
                                 if (bitmap != null) {
-                                    Image(bitmap, app.label, Modifier.size(44.dp))
+                                    Image(bitmap, app.label, Modifier.size(38.dp))
                                 } else {
-                                    Icon(Icons.Default.Android, null, Modifier.size(44.dp))
+                                    Icon(Icons.Default.Android, null, Modifier.size(38.dp))
                                 }
                             },
                             trailingContent = {
