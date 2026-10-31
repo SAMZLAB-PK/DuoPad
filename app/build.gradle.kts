@@ -15,8 +15,8 @@ android {
         applicationId = "com.samz.samzlink"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.9.0-immersive-startup-fix-beta"
+        versionCode = 10
+        versionName = "0.10.0-frame-watchdog-beta"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
