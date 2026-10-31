@@ -16,8 +16,8 @@ assert 'mutableFloatStateOf(0.95f)' in mouse
 assert 'Color(0xFFFBFCFD)' in mouse
 assert 'BoxWithConstraints(' in game and 'maxWidth * (if (portrait)' in game
 assert 'Semaphore(2)' in apps and 'queue.withPermit' in apps
-assert 'VideoProfile(960, 24, 2_000_000, true)' in video
-assert 'VideoProfile(720, 15, 1_200_000, false)' in video
+assert 'VideoProfile(960, 24, 2_000_000, false)' in video
+assert 'VideoProfile(720, 15, 1_200_000, true)' in video
 assert 'video_codec=h264' in video
-assert 'versionCode = 6' in build and '0.6.0-video-ui-beta' in build
+assert 'versionCode = 7' in build and '0.6.0-video-ui-beta' in build
 print("DOUPAD_PRO_V06_SOURCE_CHECKS_PASS")
