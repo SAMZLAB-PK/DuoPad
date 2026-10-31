@@ -26,6 +26,8 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
+import android.util.Log
 import kotlin.concurrent.thread
 
 /** Low-latency scrcpy 3.3.1 video + direct touch client. Each surface owns its session. */
@@ -37,6 +39,30 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     private val worker = Executors.newSingleThreadExecutor()
     private val inputWorker = Executors.newSingleThreadExecutor()
     @Volatile private var session: Session? = null
+    @Volatile private var stage: String = "Not started"
+
+    private fun checkpoint(ticket: Int, name: String) {
+        stage = name
+        Log.i("DouPadMirror", "session=$ticket stage=$name")
+        runCatching {
+            File(filesDir, "doupad_mirror_diagnostics.txt").appendText(
+                "${System.currentTimeMillis()} session=$ticket $name\n"
+            )
+        }
+        show(ticket, name)
+    }
+
+    private fun failure(ticket: Int, cause: Throwable) {
+        val detail = cause.message ?: cause.javaClass.simpleName
+        val message = "$stage — $detail"
+        Log.e("DouPadMirror", message, cause)
+        runCatching {
+            val file = File(filesDir, "doupad_mirror_diagnostics.txt")
+            file.appendText("${System.currentTimeMillis()} session=$ticket ERROR $message\n")
+            if (file.length() > 65_536L) file.writeText(file.readText().takeLast(32_768))
+        }
+        show(ticket, "Live mirror error: $message")
+    }
 
     private class Session(val adb: Dadb) {
         @Volatile var closed = false
@@ -237,17 +263,20 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         // Second preset deliberately disables scrcpy control socket. Some Android TV
         // firmware streams video reliably but rejects the second abstract socket.
         val profiles = listOf(
-            VideoProfile(960, 24, 2_000_000, true),
-            VideoProfile(720, 15, 1_200_000, false)
+            VideoProfile(960, 24, 2_000_000, false),
+            VideoProfile(720, 15, 1_200_000, true)
         )
         for ((index, profile) in profiles.withIndex()) {
             if (generation.get() != ticket) return
+            checkpoint(ticket,
+                "Preparing H.264 stream ${index+1}/${profiles.size}: ${profile.maxSize}p / ${profile.fps}fps / control=${profile.control}")
             val result = runCatching { streamAttempt(holder, ticket, profile) }
             if (generation.get() != ticket) return
             if (result.isSuccess) return
             val error = result.exceptionOrNull()
             val detail = error?.message ?: error?.javaClass?.simpleName ?: "Unknown video error"
             android.util.Log.w("DouPadVideo", "Video profile ${index + 1} failed: $detail", error)
+            if (error != null) failure(ticket, error)
             if (index == profiles.lastIndex) {
                 show(ticket,
                     "Live video unavailable: $detail. Use Screenshot for this TV, or retry with a supported encoder."
@@ -269,6 +298,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             val port = endpoint.substringAfter(':', "5555").toInt()
             val keyDir = File(filesDir, "adb")
             val keys = AdbKeyPair.read(File(keyDir, "adbkey"), File(keyDir, "adbkey.pub"))
+            checkpoint(ticket, "Authenticating to selected Android device")
             val adb = Dadb.create(host, port, keys, connectTimeout = 5000, socketTimeout = 30000)
             val current = Session(adb)
             own = current
@@ -287,8 +317,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                     "send_dummy_byte=false send_device_meta=false send_codec_meta=true send_frame_meta=true " +
                     "video_codec=h264 max_size=${profile.maxSize} max_fps=${profile.fps} " +
                     "video_bit_rate=${profile.bitRate} cleanup=true"
+            checkpoint(ticket, "Starting device-side video encoder")
             current.server = adb.open("shell:$command")
 
+            checkpoint(ticket, "Opening H.264 video socket")
             for (attempt in 0 until 30) {
                 if (current.closed || generation.get() != ticket) return
                 try {
@@ -315,6 +347,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
             val source = current.video?.source ?: error("TV video socket unavailable")
             if (profile.control) check(current.control != null) { "TV control socket unavailable" }
+            checkpoint(ticket, "Reading scrcpy codec metadata")
             val codecId = source.readInt()
             val width = source.readInt()
             val height = source.readInt()
@@ -332,22 +365,36 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 }
             }
 
+            checkpoint(ticket, "Initializing hardware H.264 decoder (${width}×${height})")
+            val format = MediaFormat.createVideoFormat("video/avc", width, height)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+            }
+            format.setInteger(MediaFormat.KEY_PRIORITY, 0)
             val codec = MediaCodec.createDecoderByType("video/avc")
             current.codec = codec
-            codec.configure(MediaFormat.createVideoFormat("video/avc", width, height), holder.surface, null, 0)
+            codec.configure(format, holder.surface, null, 0)
             codec.start()
-            runOnUiThread {
-                if (generation.get() == ticket) status.visibility = View.GONE
-            }
+            val firstFrame = AtomicBoolean(false)
+            checkpoint(ticket, "Waiting for first decoded video frame")
 
             drain = thread(name = "doupad-video-output") {
                 val info = MediaCodec.BufferInfo()
                 try {
                     while (!current.closed && generation.get() == ticket) {
                         val index = codec.dequeueOutputBuffer(info, 10000)
-                        if (index >= 0) codec.releaseOutputBuffer(index, true)
+                        if (index >= 0) {
+                            codec.releaseOutputBuffer(index, true)
+                            if (firstFrame.compareAndSet(false, true)) {
+                                Log.i("DouPadMirror", "H.264 first video frame rendered")
+                                runOnUiThread {
+                                    if (generation.get() == ticket) status.visibility = View.GONE
+                                }
+                            }
+                        }
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    failure(ticket, IOException("H.264 decoder output failed: ${e.message}", e))
                     current.close()
                 }
             }
