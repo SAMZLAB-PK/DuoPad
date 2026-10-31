@@ -12,11 +12,11 @@ android {
     buildToolsVersion = "35.0.0"
 
     defaultConfig {
-        applicationId = "com.samz.doupad"
+        applicationId = "com.samz.samzlink"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "4.0.0-android-engine"
+        versionCode = 1
+        versionName = "0.1.0-connectivity-beta"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 

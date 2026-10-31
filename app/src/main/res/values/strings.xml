@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">DOUPAD</string>
+    <string name="app_name">SAMZ Link</string>
     <string name="pc_mode">PC</string>
     <string name="android_mode">Android</string>
     <string name="connecting">Connecting…</string>
@@ -18,7 +18,7 @@
     <string name="screenshot">Screenshot</string>
     <string name="reboot">Reboot</string>
     <string name="settings">Settings</string>
-    <string name="notification_title">DOUPAD Active</string>
+    <string name="notification_title">SAMZ Link Active</string>
     <string name="notification_text">Secure connection active</string>
     <string name="bluetooth_hid">Bluetooth HID</string>
     <string name="network_host">Network Host</string>

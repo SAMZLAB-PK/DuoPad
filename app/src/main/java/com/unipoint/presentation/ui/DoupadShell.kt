@@ -157,7 +157,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=23.dp,vertical=20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             when(page) {
                 0->{
-                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("DOUPAD",fontSize=26.sp,fontWeight=FontWeight.ExtraBold,color=Ink);IconButton(onClick={dialog="settings"}){Icon(Icons.Default.Settings,"Settings")}}
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("SAMZ Link",fontSize=26.sp,fontWeight=FontWeight.ExtraBold,color=Ink);IconButton(onClick={dialog="settings"}){Icon(Icons.Default.Settings,"Settings")}}
                     Title("Your devices","Control all your screens from one place.")
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){listOf("All","TV","PC").forEach{label->FilterChip(selected=filter==label,onClick={filter=label},label={Text(label)},shape=CircleShape,colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Teal,selectedLabelColor=Color.White))}}
                     val visible=targets.filter {filter=="All"||(filter=="PC")==it.pc}
@@ -166,7 +166,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     OutlinedButton(onClick={dialog="connect"},modifier=Modifier.fillMaxWidth().height(76.dp),shape=RoundedCornerShape(15.dp),border=BorderStroke(1.dp,Border)){Icon(Icons.Default.AddCircleOutline,null,tint=Teal);Spacer(Modifier.width(12.dp));Column{Text("Add device",color=Ink,fontWeight=FontWeight.SemiBold);Text("Connect a new TV or PC",fontSize=11.sp,color=Muted)}}
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Quick actions",fontWeight=FontWeight.Bold,fontSize=17.sp);IconButton(onClick={vm.scanAndroid();dialog="scan"}){Icon(Icons.Default.Radar,"Find TV",tint=Teal)}}
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Quick("Remote",Icons.Default.SettingsRemote,Modifier.weight(1f)){page=1};Quick("Mirror",Icons.Default.ScreenShare,Modifier.weight(1f)){page=2};Quick("Send files",Icons.AutoMirrored.Filled.Send,Modifier.weight(1f)){if(requireTv())detail="files"};Quick("Install APK",Icons.Default.InstallMobile,Modifier.weight(1f)){if(requireTv())detail="apps"}}
-                    Hint("Bluetooth Direct needs no PC app. Wi-Fi control uses DOUPAD Host on the same network.")
+                    Hint("Bluetooth Direct needs no PC app. Wi-Fi control uses SAMZ Link Host on the same network.")
                 }
                 1->{
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){IconButton(onClick={page=0}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Home")};Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){Text(if(connected)status.deviceName?:"Remote control" else "Remote control",fontSize=18.sp,fontWeight=FontWeight.Bold);Text(if(connected)"● Connected" else "Choose a device to start",fontSize=11.sp,color=if(connected)Teal else Muted)};IconButton(onClick={dialog="settings"}){Icon(Icons.Default.MoreVert,"Device options")}}
@@ -227,7 +227,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
             }
         }
     }
-    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Color.White,title={Text(when(dialog){"connect"->"Add a device";"keyboard"->"Keyboard";"settings"->"DOUPAD";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
+    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Color.White,title={Text(when(dialog){"connect"->"Add a device";"keyboard"->"Keyboard";"settings"->"SAMZ Link";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
             when(dialog){
                 "connect"->{
@@ -253,14 +253,14 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                                         Icon(Icons.Default.Bluetooth,null,tint=Teal)
                                         Column { Text("Bluetooth Direct",fontWeight=FontWeight.Bold);Text("No PC app required",fontSize=12.sp,color=Teal) }
                                     }
-                                    Text("Pair this phone from Windows, macOS or Linux Bluetooth settings. DOUPAD acts as a mouse + keyboard.",fontSize=12.sp,color=Muted)
+                                    Text("Pair this phone from Windows, macOS or Linux Bluetooth settings. SAMZ Link acts as a mouse + keyboard.",fontSize=12.sp,color=Muted)
                                     Button(onClick={startBluetoothDirect()},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Start Bluetooth Direct")}
                                 }
                             }
                         } else {
                             if(state.isScanningPc) {
                                 LinearProgressIndicator(Modifier.fillMaxWidth())
-                                Text("Looking for DOUPAD Host on your network…",fontSize=12.sp,color=Muted)
+                                Text("Looking for SAMZ Link Host on your network…",fontSize=12.sp,color=Muted)
                             }
                             state.pcDevices.take(6).forEach { host ->
                                 OutlinedButton(onClick={
@@ -276,13 +276,13 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                             if(!state.isScanningPc && state.pcDevices.none { it.isReachable }) {
                                 Surface(shape=RoundedCornerShape(14.dp),color=Pale,border=BorderStroke(1.dp,Border)) {
                                     Column(Modifier.fillMaxWidth().padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        Text("DOUPAD Host required for Wi-Fi",fontWeight=FontWeight.Bold)
-                                        Text("Bluetooth Direct works without any PC software. For Wi-Fi control, run the small DOUPAD Host on Windows, macOS or Linux.",fontSize=12.sp,color=Muted)
+                                        Text("SAMZ Link Host required for Wi-Fi",fontWeight=FontWeight.Bold)
+                                        Text("Bluetooth Direct works without any PC software. For Wi-Fi control, run the small SAMZ Link Host on Windows, macOS or Linux.",fontSize=12.sp,color=Muted)
                                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                             OutlinedButton(onClick={vm.scanPc()},modifier=Modifier.weight(1f)){Text("Scan again")}
                                             Button(onClick={
                                                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.HOST_RELEASES_URL))) }
-                                                    .onFailure { message("Could not open the DOUPAD Host download page.") }
+                                                    .onFailure { message("Could not open the SAMZ Link Host download page.") }
                                             },modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Get Host")}
                                         }
                                         TextButton(onClick={pcTransport="bluetooth"},modifier=Modifier.fillMaxWidth()){Text("Use Bluetooth Direct instead")}
@@ -301,7 +301,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 "scan"->{if(state.isScanning)LinearProgressIndicator(Modifier.fillMaxWidth());state.androidDevices.forEach{d->TextButton(onClick={ip=d.ip;port=d.port.toString();pc=false;dialog="connect"}){Text("${d.name}\n${d.ip}:${d.port}")}};if(!state.isScanning&&state.androidDevices.isEmpty())Text("No TVs found. Check network debugging or enter the IP manually.")}
                 "keyboard"->{OutlinedTextField(command,{command=it},label={Text("Text to send")});Text("Focus a text field on your device first.",fontSize=12.sp,color=Muted)}
                 "shell"->{OutlinedTextField(command,{command=it},label={Text("ADB command")});Button(onClick={scope.launch{output="Running…";output=vm.executeAdbAwait(command)}}){Text("Run")};if(output.isNotBlank())Text(output,fontSize=12.sp)}
-                "settings"->{Text("DOUPAD 3.3.0 · Public connectivity test");Text("White / teal theme • No demo connected devices.",fontSize=12.sp);if(connected)TextButton(onClick={vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
+                "settings"->{Text("SAMZ Link 3.3.0 · Public connectivity test");Text("White / teal theme • No demo connected devices.",fontSize=12.sp);if(connected)TextButton(onClick={vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
                 "power"->{listOf("Sleep" to "input keyevent 223","Wake" to "input keyevent 224","Restart" to "reboot","Power off" to "reboot -p").forEach{(label,cmd)->OutlinedButton(onClick={command=cmd;dialog="Confirm power action"},modifier=Modifier.fillMaxWidth()){Text(label)}}}
                 "Confirm power action"->Text("Run '$command' on ${status.deviceName}? Restart/shutdown disconnects the device.")
                 "gamepad"->{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("A" to 96,"B" to 97,"X" to 99,"Y" to 100).forEach{(label,code)->OutlinedButton(onClick={key(code)},contentPadding=PaddingValues(12.dp)){Text(label)}}};Pad(::key);Text("Key-based game controls; compatibility depends on the game.",fontSize=11.sp,color=Muted)}
