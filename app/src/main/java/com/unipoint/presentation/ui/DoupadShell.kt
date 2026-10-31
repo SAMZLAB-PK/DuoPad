@@ -83,7 +83,8 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     var pcTransport by rememberSaveable { mutableStateOf("bluetooth") }
     var localError by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("All") }
-    var scanFilter by rememberSaveable { mutableStateOf("All") }
+    var scanFilter by rememberSaveable { mutableStateOf("Saved") }
+    var remoteMode by rememberSaveable { mutableIntStateOf(0) }
     var connectRequested by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Target?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -130,7 +131,15 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     }
     fun requireDevice():Boolean { if(!connected){dialog="connect";message("Connect your TV or PC first.")};return connected }
     fun requireTv():Boolean { if(!requireDevice())return false; if(state.mode!=AppMode.ANDROID){message("This tool requires an Android TV connection.");return false};return true }
-    fun key(code:Int) { if(!requireDevice())return; if(state.mode==AppMode.ANDROID)vm.executeAdb(AdbCommand.InputKey(code)) else { val hid=when(code){19->82;20->81;21->80;22->79;23,66->40;4->41;3->74;else->{message("This button is available for Android TV only.");return}};vm.sendKey(hid,true);vm.sendKey(hid,false) } }
+    fun key(code:Int) {
+        if(!requireDevice())return
+        val mapped = if(state.mode==AppMode.ANDROID) RemoteKeyMapping.resolve(context,code) else code
+        if(state.mode==AppMode.ANDROID) vm.executeAdb(AdbCommand.InputKey(mapped))
+        else {
+            val hid=when(code){19->82;20->81;21->80;22->79;23,66->40;4->41;3->74;else->{message("This button is available for Android TV only.");return}}
+            vm.sendKey(hid,true);vm.sendKey(hid,false)
+        }
+    }
     fun showCommand(title:String,cmd:String) { if(!requireDevice())return;dialog=title;output="Running…";scope.launch { output=vm.executeAdbAwait(cmd).ifBlank { "Completed with no output." } } }
     fun applySelectedAction() {
         val isTv = state.mode == AppMode.ANDROID
@@ -152,7 +161,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     }
     fun openNearby(action:String) {
         pendingQuickAction=action
-        scanFilter="All"
+        scanFilter="Saved"
         page=4
         vm.scanNearby()
     }
@@ -197,6 +206,15 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         "files"->{FileManagerScreen(onBack=back);return}
         "preview"->{ScreenMirrorScreen(onBack=back);return}
         "mouse"->{AndroidMousePadScreen(onBack=back,airMouse=airMouseSelected);return}
+        "androidKeyboard"->{AndroidKeyboardScreen(onBack={detail=null;remoteMode=0},onSwipeMode={direction->
+            when {
+                direction<0 -> { airMouseSelected=true;detail="mouse";remoteMode=2 }
+                else -> { detail=null;remoteMode=0 }
+            }
+        });return}
+        "shellFull"->{AdbShellScreen(onBack=back);return}
+        "gamepadFull"->{AndroidGamepadScreen(onBack=back);return}
+        "mappingFull"->{RemoteMappingScreen(onBack=back);return}
         "pcKeyboard"->{KeyboardScreen(onBack=back);return}
     }
     Scaffold(containerColor=Background,snackbarHost={SnackbarHost(snack)},bottomBar={
@@ -209,7 +227,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=23.dp,vertical=20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             when(page) {
                 0->{
-                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("SAMZ Link",fontSize=26.sp,fontWeight=FontWeight.ExtraBold,color=Ink);IconButton(onClick={dialog="settings"}){Icon(Icons.Default.Settings,"Settings")}}
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("DouPad Pro",fontSize=26.sp,fontWeight=FontWeight.ExtraBold,color=Ink);IconButton(onClick={dialog="settings"}){Icon(Icons.Default.Settings,"Settings")}}
                     Title("Your devices","Control all your screens from one place.")
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){listOf("All","TV","PC").forEach{label->FilterChip(selected=filter==label,onClick={filter=label},label={Text(label)},shape=CircleShape,colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Teal,selectedLabelColor=Color.White))}}
                     val visible=targets.filter {filter=="All"||(filter=="PC")==it.pc}
@@ -252,9 +270,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 }
                 4->{
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                        IconButton(onClick={page=0;pendingQuickAction="Remote"}) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back")
-                        }
+                        IconButton(onClick={page=0;pendingQuickAction="Remote"}) { Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back") }
                         Column(Modifier.weight(1f)) {
                             Text("Nearby devices",fontSize=24.sp,fontWeight=FontWeight.Bold,color=Ink)
                             Text("Choose a device for $pendingQuickAction",fontSize=12.sp,color=Muted)
@@ -264,121 +280,121 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     Surface(color=Color(0xFFEFFAFA),shape=RoundedCornerShape(12.dp)) {
                         Row(Modifier.fillMaxWidth().padding(13.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                             Icon(Icons.Default.Lock,null,Modifier.size(18.dp),tint=Teal)
-                            Text("Scanning never requests USB debugging authorization. Only connecting to your selected Android device can trigger its approval prompt.",fontSize=12.sp,color=Ink)
+                            Text("Saved devices were previously connected/authorized. Network scanning itself never sends an ADB authorization request.",fontSize=12.sp,color=Ink)
                         }
                     }
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        listOf("All","Android","PC").forEach { type ->
-                            FilterChip(selected=scanFilter==type,onClick={scanFilter=type},label={Text(type)})
+                    Row(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+                        listOf("Saved","All","TV","PC").forEach { type ->
+                            FilterChip(selected=scanFilter==type,onClick={scanFilter=type},label={Text(type,fontSize=11.sp)})
                         }
                     }
                     if(state.isScanning || state.isScanningPc){
                         LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Text("Searching for Android ADB ports and Windows hosts…",fontSize=12.sp,color=Muted)
+                        Text("Searching without ADB authentication…",fontSize=12.sp,color=Muted)
                     }
                     val androidFound=state.androidDevices.distinctBy { it.id }
                     val pcFound=state.pcDevices.distinctBy { it.id }
-                    val rememberedAndroid=targets.filter { !it.pc && androidFound.none { item->item.id==it.endpoint } }
-                    val rememberedPc=targets.filter { it.pc && pcFound.none { item->item.id==it.endpoint } }
-                    if(scanFilter!="PC"){
-                        androidFound.forEach { device ->
-                            val remembered=targets.firstOrNull { it.endpoint==device.id }
-                            val deviceName=remembered?.customName ?: remembered?.name
-                                ?: "Android TV / Box"
-                            OutlinedButton(onClick={open(Target(deviceName,device.id,false,remembered?.customName))},
-                                modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){
-                                Icon(Icons.Default.Tv,null,Modifier.size(27.dp),tint=Teal)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(deviceName,maxLines=1,fontWeight=FontWeight.SemiBold)
-                                    Text(device.id+" · Tap to authorize and connect",fontSize=11.sp,color=Muted)
-                                }
-                                Icon(Icons.Default.ChevronRight,null)
+                    val savedTargets=targets.distinctBy { it.endpoint }
+                    fun targetButton(target:Target,subtitle:String,tint:Color=Teal): @Composable ()->Unit = {
+                        OutlinedButton(onClick={open(target)},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){
+                            Icon(if(target.pc)Icons.Default.Computer else Icons.Default.Tv,null,Modifier.size(27.dp),tint=tint)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(target.customName ?: target.name,maxLines=1,fontWeight=FontWeight.SemiBold)
+                                Text(subtitle,fontSize=11.sp,color=Muted,maxLines=1)
                             }
-                        }
-                        rememberedAndroid.forEach { target ->
-                            OutlinedButton(onClick={open(target)},modifier=Modifier.fillMaxWidth(),
-                                shape=RoundedCornerShape(14.dp)){
-                                Icon(Icons.Default.Tv,null,Modifier.size(26.dp),tint=Muted)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(target.customName ?: target.name,maxLines=1,fontWeight=FontWeight.SemiBold)
-                                    Text(target.endpoint+" · Previously saved",fontSize=11.sp,color=Muted)
-                                }
-                                Icon(Icons.Default.ChevronRight,null)
-                            }
+                            Icon(Icons.Default.ChevronRight,null)
                         }
                     }
-                    if(scanFilter!="Android"){
-                        pcFound.forEach { host ->
-                            val previous=targets.firstOrNull { it.endpoint==host.address }
-                            val name=previous?.customName ?: previous?.name ?: host.name
-                            OutlinedButton(onClick={open(Target(name,host.address,true,previous?.customName))},
-                                modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){
-                                Icon(Icons.Default.Computer,null,Modifier.size(26.dp),tint=Teal)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(name,maxLines=1,fontWeight=FontWeight.SemiBold)
-                                    Text(host.address+(if(host.isReachable)" · Host online" else " · Saved PC"),
-                                        fontSize=11.sp,color=Muted)
-                                }
-                                Icon(Icons.Default.ChevronRight,null)
+                    if(scanFilter=="Saved"){
+                        if(savedTargets.isEmpty() && !state.isScanning) Text("No saved authorized devices yet.",fontSize=12.sp,color=Muted)
+                        savedTargets.forEach { target -> targetButton(target,target.endpoint+" · Saved / previously authorized")() }
+                    } else {
+                        if(scanFilter!="PC"){
+                            androidFound.forEach { device ->
+                                val saved=savedTargets.firstOrNull { it.endpoint==device.id }
+                                val name=saved?.customName ?: saved?.name ?: "Android TV / Box"
+                                targetButton(Target(name,device.id,false,saved?.customName),
+                                    device.id + if(saved!=null)" · Saved" else " · Tap to authorize & connect",
+                                    if(saved!=null)Teal else Muted)()
+                            }
+                            if(scanFilter=="TV" || scanFilter=="All"){
+                                savedTargets.filter { !it.pc && androidFound.none { d->d.id==it.endpoint } }
+                                    .forEach { target -> targetButton(target,target.endpoint+" · Saved / offline")() }
                             }
                         }
-                        rememberedPc.forEach { target ->
-                            OutlinedButton(onClick={open(target)},modifier=Modifier.fillMaxWidth(),
-                                shape=RoundedCornerShape(14.dp)){
-                                Icon(Icons.Default.Computer,null,Modifier.size(26.dp),tint=Muted)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(target.customName ?: target.name,maxLines=1,fontWeight=FontWeight.SemiBold)
-                                    Text(target.endpoint+" · Previously saved",fontSize=11.sp,color=Muted)
-                                }
-                                Icon(Icons.Default.ChevronRight,null)
+                        if(scanFilter!="TV"){
+                            pcFound.forEach { host ->
+                                val saved=savedTargets.firstOrNull { it.endpoint==host.address }
+                                val name=saved?.customName ?: saved?.name ?: host.name
+                                targetButton(Target(name,host.address,true,saved?.customName),
+                                    host.address + if(host.isReachable)" · PC host online" else " · Saved PC",
+                                    if(host.isReachable)Teal else Muted)()
+                            }
+                            if(scanFilter=="PC" || scanFilter=="All"){
+                                savedTargets.filter { it.pc && pcFound.none { h->h.address==it.endpoint } }
+                                    .forEach { target -> targetButton(target,target.endpoint+" · Saved / offline")() }
                             }
                         }
-                    }
-                    if(!state.isScanning && !state.isScanningPc
-                        && (scanFilter=="PC" || (androidFound.isEmpty() && rememberedAndroid.isEmpty()))
-                        && (scanFilter=="Android" || (pcFound.isEmpty() && rememberedPc.isEmpty()))) {
-                        Text("No devices found. Enable Network Debugging on your TV/Box or start the Windows host, then scan again.",
-                            color=Muted,fontSize=12.sp)
                     }
                     OutlinedButton(onClick={vm.scanNearby()},modifier=Modifier.fillMaxWidth()){
-                        Icon(Icons.Default.Refresh,null)
-                        Text("  Scan again")
+                        Icon(Icons.Default.Refresh,null);Text("  Scan again")
                     }
-                    OutlinedButton(onClick={pc=false;port="5555";dialog="connect"},
-                        modifier=Modifier.fillMaxWidth()){
-                        Icon(Icons.Default.Add,null)
-                        Text("  Connect by IP")
+                    OutlinedButton(onClick={pc=false;port="5555";dialog="connect"},modifier=Modifier.fillMaxWidth()){
+                        Icon(Icons.Default.Add,null);Text("  Connect by IP")
                     }
                 }
                 1->{
-                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){IconButton(onClick={page=0}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Home")};Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){Text(if(connected)status.deviceName?:"Remote control" else "Remote control",fontSize=18.sp,fontWeight=FontWeight.Bold);Text(if(connected)"● Connected" else "Choose a device to start",fontSize=11.sp,color=if(connected)Teal else Muted)};IconButton(onClick={dialog="settings"}){Icon(Icons.Default.MoreVert,"Device options")}}
-                    var mode by rememberSaveable { mutableIntStateOf(0) }
-                    TabRow(selectedTabIndex=mode,containerColor=Background,contentColor=Teal){
-                        listOf("D-pad","Touchpad","Air mouse").forEachIndexed { i,t ->
-                            Tab(selected=mode==i,onClick={
-                                if(i!=0 && state.mode==AppMode.ANDROID) {
-                                    if(requireTv()) { airMouseSelected=i==2;detail="mouse" }
-                                } else mode=i
-                            },text={Text(t,fontSize=12.sp)})
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                        IconButton(onClick={page=0}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Home")}
+                        Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){
+                            Text(if(connected)status.deviceName?:"Remote control" else "Remote control",fontSize=18.sp,fontWeight=FontWeight.Bold)
+                            Text(if(connected)"● Connected" else "Choose a device to start",fontSize=11.sp,color=if(connected)Teal else Muted)
+                        }
+                        IconButton(onClick={
+                            if(requireDevice()) runCatching{
+                                voice.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                                    .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM))
+                            }.onFailure{message("No speech recognition app installed")}
+                        }){Icon(Icons.Default.Mic,"Voice input",tint=Teal)}
+                        IconButton(onClick={dialog="settings"}){Icon(Icons.Default.MoreVert,"Device options")}
+                    }
+                    TabRow(selectedTabIndex=remoteMode,containerColor=Background,contentColor=Teal){
+                        listOf("D-pad","Touchpad","Air mouse","Keyboard").forEachIndexed { i,t ->
+                            Tab(selected=remoteMode==i,onClick={
+                                remoteMode=i
+                                if(i==1 && requireTv()){airMouseSelected=false;detail="mouse"}
+                                if(i==2 && requireTv()){airMouseSelected=true;detail="mouse"}
+                                if(i==3 && requireTv())detail="androidKeyboard"
+                            },text={Text(t,fontSize=11.sp,maxLines=1)})
                         }
                     }
-                    if(mode==0) Pad(::key) else if(mode==1) {
+                    if(remoteMode==0) Box(
+                        Modifier.fillMaxWidth().pointerInput(Unit){
+                            var total=0f
+                            detectHorizontalDragGestures(
+                                onDragStart={total=0f},
+                                onHorizontalDrag={_,amount->total+=amount},
+                                onDragEnd={
+                                    if(total < -90f && requireTv()){remoteMode=1;airMouseSelected=false;detail="mouse"}
+                                }
+                            )
+                        }
+                    ){Pad(::key)} else if(remoteMode==1) {
                         var dx by remember {mutableFloatStateOf(0f)};var dy by remember{mutableFloatStateOf(0f)}
                         Box(Modifier.fillMaxWidth().height(265.dp).clip(RoundedCornerShape(22.dp)).background(Pale).border(1.dp,Border,RoundedCornerShape(22.dp)).pointerInput(connected,state.mode){detectDragGestures(onDragStart={dx=0f;dy=0f},onDragEnd={if(state.mode==AppMode.ANDROID)key(if(kotlin.math.abs(dx)>kotlin.math.abs(dy)){if(dx>0)22 else 21}else if(dy>0)20 else 19)}){change,drag->change.consume();dx+=drag.x;dy+=drag.y;if(connected&&state.mode==AppMode.PC)vm.sendMouseMove(drag.x*2,drag.y*2)}}.pointerInput(connected){detectTapGestures{if(connected&&state.mode==AppMode.PC)vm.sendMouseClick(MouseButton.LEFT) else key(23)}},contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)){Icon(Icons.Default.TouchApp,null,Modifier.size(38.dp),tint=Teal);Text("Touch, swipe, control",fontWeight=FontWeight.SemiBold);Text(if(state.mode==AppMode.PC)"Move pointer • Tap to click" else "Swipe to navigate • Tap to select",fontSize=12.sp,color=Muted)}}
                     } else Surface(color=Pale,shape=RoundedCornerShape(22.dp)){Column(Modifier.fillMaxWidth().padding(28.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)){Icon(Icons.Default.Air,null,Modifier.size(36.dp),tint=Teal);Text("Air mouse",fontWeight=FontWeight.Bold);Text("Use the precision mouse controls on your Android TV.",fontSize=12.sp,color=Muted);OutlinedButton(onClick={if(requireTv())detail="mouse"}){Text("Open mouse controls")};Text("Gyroscope steering is not enabled in this native beta.",fontSize=11.sp,color=Muted)}}
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){RoundKey("Back",Icons.AutoMirrored.Filled.ArrowBack){key(4)};RoundKey("Home",Icons.Default.Home){key(3)};RoundKey("Menu",Icons.Default.Menu){key(82)}}
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically){Column(horizontalAlignment=Alignment.CenterHorizontally){Surface(color=Pale,shape=CircleShape,border=BorderStroke(1.dp,Border)){Column(horizontalAlignment=Alignment.CenterHorizontally){IconButton(onClick={key(24)}){Icon(Icons.Default.Add,"Volume up")};Icon(Icons.AutoMirrored.Filled.VolumeUp,null);IconButton(onClick={key(25)}){Icon(Icons.Default.Remove,"Volume down")}}};Text("Volume",fontSize=11.sp,color=Muted)};Column(verticalArrangement=Arrangement.spacedBy(15.dp)){RoundKey("Mute",Icons.AutoMirrored.Filled.VolumeOff){key(164)};RoundKey("Power",Icons.Default.PowerSettingsNew){if(requireTv())dialog="power"}};Column(horizontalAlignment=Alignment.CenterHorizontally){Surface(color=Pale,shape=CircleShape,border=BorderStroke(1.dp,Border)){Column(horizontalAlignment=Alignment.CenterHorizontally){IconButton(onClick={key(166)}){Icon(Icons.Default.KeyboardArrowUp,"Channel up")};Text("CH",fontSize=12.sp);IconButton(onClick={key(167)}){Icon(Icons.Default.KeyboardArrowDown,"Channel down")}}};Text("Channel",fontSize=11.sp,color=Muted)}}
-                    Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Quick("Keyboard",Icons.Default.Keyboard,Modifier.weight(1f)){if(requireDevice()){command="";dialog="keyboard"}};Quick("Microphone",Icons.Default.Mic,Modifier.weight(1f)){if(requireDevice())runCatching{voice.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM))}.onFailure{message("No speech recognition app installed")}}}
+                    Hint("Swipe left on D-pad to open Touchpad. Touchpad, Air Mouse and Keyboard are full-screen modes.")
                 }
                 2->{
                     Title("Screen mirror","View your device screen in real time.")
                     Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){Button(onClick={},modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(12.dp)){Icon(Icons.Default.Tv,null,Modifier.size(18.dp));Text("  TV → Phone",fontSize=12.sp)};OutlinedButton(onClick={dialog="cast"},modifier=Modifier.weight(1f),shape=RoundedCornerShape(12.dp)){Text("Phone → TV",fontSize=12.sp)}}
                     Surface(color=Pale,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,Border)){Column(Modifier.fillMaxWidth().height(210.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Icon(Icons.Default.Tv,null,Modifier.size(54.dp),tint=Muted);Spacer(Modifier.height(12.dp));Text(if(connected)status.deviceName?:"TV screen" else "Your screen, right here",fontWeight=FontWeight.SemiBold);Text("Connect an Android TV to begin.",fontSize=12.sp,color=Muted)}}
-                    OutlinedButton(onClick={if(requireDevice()){if(state.mode==AppMode.ANDROID){val intent=Intent(context,DoupadMirrorActivity::class.java).putExtra("endpoint",status.address);context.startActivity(intent)}else message("Live video currently requires Android TV")}},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){Icon(Icons.Default.Fullscreen,null);Text("Live mirror · Full screen")}
+                    OutlinedButton(onClick={if(requireTv())detail="preview"},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
+                        Icon(Icons.Default.Fullscreen,null);Text("Live mirror · Stable full screen")
+                    }
                     Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Quick("Screenshot",Icons.Default.PhotoCamera,Modifier.weight(1f)){if(requireTv()){detail="preview"}};Quick("Record",Icons.Default.FiberManualRecord,Modifier.weight(1f)){dialog="record"}}
                     Text("Video quality",fontWeight=FontWeight.SemiBold);Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("Auto","720p","1080p").forEach{q->FilterChip(selected=q=="Auto",onClick={message("This beta uses adaptive 1280-pixel video, up to 30 fps.")},label={Text(q)})}}
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Column{Text("Include TV audio",fontWeight=FontWeight.SemiBold);Text("Video-only in this beta",fontSize=12.sp,color=Muted)};Switch(checked=false,onCheckedChange={message("Audio forwarding is not enabled in this beta.")})}
@@ -398,7 +414,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                                         when(label) {
                                             "Apps","Install APK" -> detail="apps"
                                             "Files","Transfers" -> detail="files"
-                                            "Shell" -> { command=""; output=""; dialog="shell" }
+                                            "Shell" -> detail="shellFull"
                                             else -> {
                                                 dialog="Device info"; output="Loading…"
                                                 scope.launch {
@@ -416,12 +432,12 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                         }
                     }
                     Text("More tools",fontSize=17.sp,fontWeight=FontWeight.Bold)
-                    Surface(shape=RoundedCornerShape(15.dp),border=BorderStroke(1.dp,Border),color=Color.White){Column{ToolRow("Gamepad","Use your phone as a gamepad",Icons.Default.SportsEsports){if(requireDevice())dialog="gamepad"};HorizontalDivider(color=Border);ToolRow("Button mapping","Customize remote keycodes",Icons.Default.Tune){dialog="mapping"};HorizontalDivider(color=Border);ToolRow("Power options","Sleep, restart or power off",Icons.Default.PowerSettingsNew){if(requireTv())dialog="power"}}}
+                    Surface(shape=RoundedCornerShape(15.dp),border=BorderStroke(1.dp,Border),color=Color.White){Column{ToolRow("Gamepad","Use your phone as a full-screen gamepad",Icons.Default.SportsEsports){if(requireTv())detail="gamepadFull"};HorizontalDivider(color=Border);ToolRow("Button mapping","Customize and save remote keycodes",Icons.Default.Tune){if(requireTv())detail="mappingFull"};HorizontalDivider(color=Border);ToolRow("Power options","Sleep, restart or power off",Icons.Default.PowerSettingsNew){if(requireTv())dialog="power"}}}
                 }
             }
         }
     }
-    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Color.White,title={Text(when(dialog){"connect"->"Add a device";"connectingSaved"->"Connecting to device";"rename"->"Rename device";"keyboard"->"Keyboard";"settings"->"SAMZ Link";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
+    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Color.White,title={Text(when(dialog){"connect"->"Add a device";"connectingSaved"->"Connecting to device";"rename"->"Rename device";"keyboard"->"Keyboard";"settings"->"DouPad Pro";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
             when(dialog){
                 "rename"->{
@@ -580,7 +596,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 }
                 "keyboard"->{OutlinedTextField(command,{command=it},label={Text("Text to send")});Text("Focus a text field on your device first.",fontSize=12.sp,color=Muted)}
                 "shell"->{OutlinedTextField(command,{command=it},label={Text("ADB command")});Button(onClick={scope.launch{output="Running…";output=vm.executeAdbAwait(command)}}){Text("Run")};if(output.isNotBlank())Text(output,fontSize=12.sp)}
-                "settings"->{Text("SAMZ Link v0.4.0 · Privacy-first discovery test");Text("White / teal theme • No demo connected devices.",fontSize=12.sp);if(connected)TextButton(onClick={vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
+                "settings"->{Text("DouPad Pro v0.5.0");Text("Android TV / Box + Windows remote and transfer controller.",fontSize=12.sp);if(connected)TextButton(onClick={vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
                 "power"->{listOf("Sleep" to "input keyevent 223","Wake" to "input keyevent 224","Restart" to "reboot","Power off" to "reboot -p").forEach{(label,cmd)->OutlinedButton(onClick={command=cmd;dialog="Confirm power action"},modifier=Modifier.fillMaxWidth()){Text(label)}}}
                 "Confirm power action"->Text("Run '$command' on ${status.deviceName}? Restart/shutdown disconnects the device.")
                 "gamepad"->{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("A" to 96,"B" to 97,"X" to 99,"Y" to 100).forEach{(label,code)->OutlinedButton(onClick={key(code)},contentPadding=PaddingValues(12.dp)){Text(label)}}};Pad(::key);Text("Key-based game controls; compatibility depends on the game.",fontSize=11.sp,color=Muted)}
