@@ -39,6 +39,8 @@ class AdbDataSource constructor(
 ) {
     private val tag = "AdbDataSource"
     private var dadb: Dadb? = null
+    @Volatile private var authorizedModelName: String? = null
+    fun connectedModelName(): String? = authorizedModelName
     private var cachedKeyPair: AdbKeyPair? = null
     private val adbMutex = Mutex()
     private val controlMutex = Mutex()
@@ -229,7 +231,10 @@ class AdbDataSource constructor(
                 _isConnected.value = true
                 val model = runCatching {
                     session.shell("getprop ro.product.model").allOutput.trim()
-                }.getOrDefault("").ifBlank { finalIp }
+                }.getOrDefault("").takeUnless { it.isBlank() || it == "unknown" }
+                    ?: runCatching { session.shell("getprop ro.product.device").allOutput.trim() }
+                        .getOrDefault("").ifBlank { "Android device ($finalIp)" }
+                authorizedModelName = model
                 runCatching {
                     val rawSize = session.shell("wm size 2>/dev/null | tail -1").allOutput
                     Regex("(\\d+)x(\\d+)").findAll(rawSize).lastOrNull()?.let { match ->
@@ -263,6 +268,7 @@ class AdbDataSource constructor(
         closeRealtimeControl()
         try { dadb?.close() } catch (_: Exception) {}
         dadb = null
+        authorizedModelName = null
         _isConnected.value = false
     }
 

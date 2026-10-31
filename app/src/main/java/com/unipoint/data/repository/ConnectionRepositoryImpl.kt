@@ -221,14 +221,15 @@ class ConnectionRepositoryImpl @Inject constructor(
         _status.value = ConnectionStatus(state = ConnectionState.CONNECTING, deviceName = device.name)
         val result = adb.connect(device.ip, device.port)
         if (result.isSuccess) {
+            val verifiedName = adb.connectedModelName()?.takeIf { it.isNotBlank() } ?: device.name
             _status.value = ConnectionStatus(
                 state = ConnectionState.CONNECTED,
-                deviceName = device.name,
+                deviceName = verifiedName,
                 address = "${device.ip}:${device.port}",
                 connectedSince = System.currentTimeMillis()
             )
             _androidDevices.update { list ->
-                list.map { if (it.id == device.id) it.copy(isConnected = true) else it }
+                listOf(device.copy(name = verifiedName, model = verifiedName, isConnected = true)) + list.filter { it.id != device.id }
             }
         } else {
             _status.value = ConnectionStatus(
