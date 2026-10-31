@@ -83,6 +83,8 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     var pcTransport by rememberSaveable { mutableStateOf("bluetooth") }
     var localError by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("All") }
+    var scanFilter by rememberSaveable { mutableStateOf("All") }
+    var connectRequested by remember { mutableStateOf(false) }
     var targets by remember { mutableStateOf(readTargets(context)) }
     val status=state.connectionStatus
     val connected=status.state==ConnectionState.CONNECTED
@@ -130,6 +132,13 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     val voice=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()){ result ->
         result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { command=it;dialog="keyboard" }
     }
+    LaunchedEffect(status.state) {
+        if (connected && connectRequested && dialog == "connect") {
+            connectRequested = false
+            dialog = null
+            page = 1
+        }
+    }
     LaunchedEffect(status.state,status.address) { if(connected) {
         val target=Target(status.deviceName?:status.address?:"Device",status.address?:"",state.mode==AppMode.PC)
         if(target.endpoint.isNotBlank() && ":" in target.endpoint){targets=listOf(target)+targets.filterNot { it.endpoint==target.endpoint };saveTargets(context,targets)}
@@ -164,7 +173,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     if(visible.isEmpty()) Surface(shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,Border),color=Color.White){Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)){Icon(Icons.Default.Devices,null,Modifier.size(48.dp),tint=Teal);Text("Your first connection starts here",fontWeight=FontWeight.SemiBold);Text("Add a TV or PC over Wi-Fi or Bluetooth.\nYour saved devices will appear here.",fontSize=13.sp,color=Muted);Button(onClick={dialog="connect"},colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Add your device")}}}
                     visible.forEach { target->val live=connected&&status.address==target.endpoint;Surface(onClick={open(target)},shape=RoundedCornerShape(17.dp),color=if(live)Color(0xFFEFFAFA) else Color.White,border=BorderStroke(1.dp,if(live)Teal else Border)){Row(Modifier.fillMaxWidth().padding(17.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)){Surface(shape=RoundedCornerShape(10.dp),color=Pale){Icon(if(target.pc)Icons.Default.Computer else Icons.Default.Tv,null,Modifier.padding(13.dp).size(47.dp),tint=Teal)};Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)){Text(target.name,fontSize=15.sp,fontWeight=FontWeight.Bold);Text(target.endpoint,fontSize=11.sp,color=Muted);Text(if(live)"● Connected" else "● Saved",fontSize=11.sp,color=if(live)Teal else Muted)};Icon(Icons.Default.ChevronRight,null,tint=Muted)}}}
                     OutlinedButton(onClick={dialog="connect"},modifier=Modifier.fillMaxWidth().height(76.dp),shape=RoundedCornerShape(15.dp),border=BorderStroke(1.dp,Border)){Icon(Icons.Default.AddCircleOutline,null,tint=Teal);Spacer(Modifier.width(12.dp));Column{Text("Add device",color=Ink,fontWeight=FontWeight.SemiBold);Text("Connect a new TV or PC",fontSize=11.sp,color=Muted)}}
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Quick actions",fontWeight=FontWeight.Bold,fontSize=17.sp);IconButton(onClick={vm.scanAndroid();dialog="scan"}){Icon(Icons.Default.Radar,"Find TV",tint=Teal)}}
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Quick actions",fontWeight=FontWeight.Bold,fontSize=17.sp);IconButton(onClick={scanFilter="All";vm.scanNearby();dialog="scan"}){Icon(Icons.Default.Radar,"Find devices",tint=Teal)}}
                     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Quick("Remote",Icons.Default.SettingsRemote,Modifier.weight(1f)){page=1};Quick("Mirror",Icons.Default.ScreenShare,Modifier.weight(1f)){page=2};Quick("Send files",Icons.AutoMirrored.Filled.Send,Modifier.weight(1f)){if(requireTv())detail="files"};Quick("Install APK",Icons.Default.InstallMobile,Modifier.weight(1f)){if(requireTv())detail="apps"}}
                     Hint("Bluetooth Direct needs no PC app. Wi-Fi control uses SAMZ Link Host on the same network.")
                 }
@@ -296,12 +305,81 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                         }
                     }
                     if(localError.isNotBlank())Text(localError,color=MaterialTheme.colorScheme.error)
-                    if(status.state==ConnectionState.CONNECTING)LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if(connectRequested && status.state==ConnectionState.CONNECTING) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text("Waiting for device authorization. Approve the prompt on your TV if shown…",fontSize=12.sp,color=Muted)
+                    }
+                    if(connectRequested && status.state==ConnectionState.ERROR) {
+                        Text(status.errorMessage ?: "Connection failed. Check debugging and try again.",fontSize=12.sp,color=MaterialTheme.colorScheme.error)
+                        Text("Connection stays open here so you can read the error and retry.",fontSize=11.sp,color=Muted)
+                    }
                 }
-                "scan"->{if(state.isScanning)LinearProgressIndicator(Modifier.fillMaxWidth());state.androidDevices.forEach{d->TextButton(onClick={ip=d.ip;port=d.port.toString();pc=false;dialog="connect"}){Text("${d.name}\n${d.ip}:${d.port}")}};if(!state.isScanning&&state.androidDevices.isEmpty())Text("No TVs found. Check network debugging or enter the IP manually.")}
+                "scan"->{
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        listOf("All","Android","PC").forEach { type ->
+                            FilterChip(selected=scanFilter==type,onClick={scanFilter=type},label={Text(type)})
+                        }
+                    }
+                    if (state.isScanning || state.isScanningPc) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text("Scanning Android ADB devices and Windows hosts…",fontSize=12.sp,color=Muted)
+                    }
+                    if (scanFilter!="PC") {
+                        state.androidDevices.distinctBy { it.id }.forEach { device ->
+                            OutlinedButton(
+                                onClick={
+                                    ip=device.ip;port=device.port.toString();pc=false
+                                    localError="";connectRequested=false;dialog="connect"
+                                },
+                                modifier=Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Tv,null,Modifier.size(20.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(device.name,maxLines=1)
+                                    Text("${device.ip}:${device.port} · Android TV / Box",fontSize=11.sp,color=Muted)
+                                }
+                                Icon(Icons.Default.ChevronRight,null,Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                    if (scanFilter!="Android") {
+                        state.pcDevices.distinctBy { it.id }.forEach { device ->
+                            OutlinedButton(
+                                onClick={
+                                    ip=device.address.substringBefore(':')
+                                    port=device.address.substringAfter(':',"27845")
+                                    pc=true;pcTransport="wifi";pin=""
+                                    localError="";connectRequested=false;dialog="connect"
+                                },
+                                modifier=Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Computer,null,Modifier.size(20.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(device.name,maxLines=1)
+                                    Text(device.address + if(device.isReachable)" · PC host online" else " · Saved PC (offline)",fontSize=11.sp,color=Muted)
+                                }
+                                Icon(Icons.Default.ChevronRight,null,Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                    if (!state.isScanning && !state.isScanningPc) {
+                        val noAndroid=scanFilter=="PC" || state.androidDevices.isEmpty()
+                        val noPc=scanFilter=="Android" || state.pcDevices.isEmpty()
+                        if(noAndroid&&noPc) Text(
+                            "No compatible devices found. TVs need an authorized ADB endpoint; Windows PCs need SAMZ Link/DOUPAD Host running.",
+                            fontSize=12.sp,color=Muted
+                        )
+                    }
+                    OutlinedButton(onClick={vm.scanNearby()},modifier=Modifier.fillMaxWidth()){
+                        Icon(Icons.Default.Refresh,null,Modifier.size(18.dp))
+                        Text("  Scan again")
+                    }
+                }
                 "keyboard"->{OutlinedTextField(command,{command=it},label={Text("Text to send")});Text("Focus a text field on your device first.",fontSize=12.sp,color=Muted)}
                 "shell"->{OutlinedTextField(command,{command=it},label={Text("ADB command")});Button(onClick={scope.launch{output="Running…";output=vm.executeAdbAwait(command)}}){Text("Run")};if(output.isNotBlank())Text(output,fontSize=12.sp)}
-                "settings"->{Text("SAMZ Link 3.3.0 · Public connectivity test");Text("White / teal theme • No demo connected devices.",fontSize=12.sp);if(connected)TextButton(onClick={vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
+                "settings"->{Text("SAMZ Link v0.2.0 · Connectivity test");Text("White / teal theme • No demo connected devices.",fontSize=12.sp);if(connected)TextButton(onClick={vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
                 "power"->{listOf("Sleep" to "input keyevent 223","Wake" to "input keyevent 224","Restart" to "reboot","Power off" to "reboot -p").forEach{(label,cmd)->OutlinedButton(onClick={command=cmd;dialog="Confirm power action"},modifier=Modifier.fillMaxWidth()){Text(label)}}}
                 "Confirm power action"->Text("Run '$command' on ${status.deviceName}? Restart/shutdown disconnects the device.")
                 "gamepad"->{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("A" to 96,"B" to 97,"X" to 99,"Y" to 100).forEach{(label,code)->OutlinedButton(onClick={key(code)},contentPadding=PaddingValues(12.dp)){Text(label)}}};Pad(::key);Text("Key-based game controls; compatibility depends on the game.",fontSize=11.sp,color=Muted)}
@@ -318,14 +396,14 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 else {
                     val p=port.toIntOrNull()
                     if(ip.isBlank()||ip.contains(Regex("[\s/:]"))||p==null||p !in 1..65535) localError="Enter a valid host and port."
-                    else { localError="";if(pc)vm.connectNetwork(ip,p,pin.ifBlank{null}) else vm.connectAndroidIp("$ip:$p");dialog=null }
+                    else { localError="";connectRequested=true;if(pc)vm.connectNetwork(ip,p,pin.ifBlank{null}) else vm.connectAndroidIp("$ip:$p") }
                 }
             }
             "keyboard"->{if(state.mode==AppMode.ANDROID)vm.executeAdb(AdbCommand.InputText(command)) else vm.sendText(command);dialog=null}
             "Confirm power action"->{showCommand("Power result",command)}
             else->dialog=null
         }
-    }){Text(when(dialog){"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
+    }){Text(when(dialog){"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else if(connectRequested&&status.state==ConnectionState.ERROR)"Retry" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
 }
 
 @Composable private fun Title(title:String,subtitle:String){Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink,letterSpacing=(-0.6).sp);Text(subtitle,fontSize=13.sp,color=Muted)}}

@@ -189,56 +189,74 @@ class AdbDataSource constructor(
             found
         }
 
+    /**
+     * Connect using our persistent ADB RSA key. Initial authorization can take
+     * several seconds while the user approves the TV's on-screen prompt.
+     * Never announce success until an authenticated shell round trip succeeds.
+     */
     suspend fun connect(ip: String, port: Int = 5555): Result<Unit> = withContext(Dispatchers.IO) {
-        try {
-            disconnect()
-            appDetailsCache.clear()
-            var finalIp = ip.trim().removePrefix("adb://").substringBefore("/")
-            var finalPort = port
-            if (finalIp.contains(":")) {
-                finalPort = finalIp.substringAfter(":").toIntOrNull() ?: port
-                finalIp = finalIp.substringBefore(":")
-            }
-            Log.i(tag, "Connecting $finalIp:$finalPort")
-
-            if (!isPortOpen(finalIp, finalPort, 2500)) {
-                return@withContext Result.failure(Exception(
-                    "Cannot reach $finalIp:$finalPort — same Wi‑Fi? Wireless debugging ON?"
-                ))
-            }
-
-            val d = Dadb.create(finalIp, finalPort, keyPairOrNull(), 5000, 8000)
-            try {
-                d.shell("echo unipoint-ok")
-            } catch (e: Exception) {
-                d.close()
-                return@withContext Result.failure(Exception(
-                    "Not authorized. TV pe Allow USB debugging dabao.\n(${e.message})"
-                ))
-            }
-            dadb = d
-            _isConnected.value = true
-            // Add to list if missing
-            val model = try {
-                d.shell("getprop ro.product.model").allOutput.trim()
-            } catch (_: Exception) { finalIp }
-            runCatching {
-                val rawSize = d.shell("wm size 2>/dev/null | tail -1").allOutput
-                Regex("(\\d+)x(\\d+)").findAll(rawSize).lastOrNull()?.let { match ->
-                    displayWidth = match.groupValues[1].toIntOrNull() ?: displayWidth
-                    displayHeight = match.groupValues[2].toIntOrNull() ?: displayHeight
-                }
-            }
-            val device = AndroidDevice(
-                id = "$finalIp:$finalPort", name = model, ip = finalIp, port = finalPort,
-                model = model, isConnected = true
-            )
-            _devices.value = (listOf(device) + _devices.value.filter { it.id != device.id })
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Log.e(tag, "connect", e)
-            Result.failure(Exception("Connect failed: ${e.message}"))
+        disconnect()
+        appDetailsCache.clear()
+        var finalIp = ip.trim().removePrefix("adb://").substringBefore("/")
+        var finalPort = port
+        if (finalIp.contains(":")) {
+            finalPort = finalIp.substringAfter(":").toIntOrNull() ?: port
+            finalIp = finalIp.substringBefore(":")
         }
+        if (finalIp.isBlank() || finalPort !in 1..65535) {
+            return@withContext Result.failure(Exception("Enter a valid TV IP address and ADB port."))
+        }
+        if (!isPortOpen(finalIp, finalPort, 2500)) {
+            return@withContext Result.failure(Exception(
+                "TV $finalIp:$finalPort is not reachable. Check same Wi-Fi, TV network debugging and ADB port."
+            ))
+        }
+        val keyPair = keyPairOrNull() ?: return@withContext Result.failure(Exception(
+            "Cannot create the phone's ADB authorization key. Check app storage and reinstall the app if necessary."
+        ))
+        var lastError: Exception? = null
+        // The approval popup often appears only after the FIRST ADB handshake.
+        for (attempt in 1..5) {
+            var session: Dadb? = null
+            try {
+                Log.i(tag, "ADB handshake with $finalIp:$finalPort, attempt $attempt")
+                session = Dadb.create(finalIp, finalPort, keyPair, 4500, 6500)
+                val output = session.shell("echo samz-link-ready").allOutput.trim()
+                if (!output.contains("samz-link-ready")) {
+                    throw java.io.IOException("ADB shell verification did not return expected response")
+                }
+                dadb = session
+                _isConnected.value = true
+                val model = runCatching {
+                    session.shell("getprop ro.product.model").allOutput.trim()
+                }.getOrDefault("").ifBlank { finalIp }
+                runCatching {
+                    val rawSize = session.shell("wm size 2>/dev/null | tail -1").allOutput
+                    Regex("(\\d+)x(\\d+)").findAll(rawSize).lastOrNull()?.let { match ->
+                        displayWidth = match.groupValues[1].toIntOrNull() ?: displayWidth
+                        displayHeight = match.groupValues[2].toIntOrNull() ?: displayHeight
+                    }
+                }
+                val device = AndroidDevice(
+                    id = "$finalIp:$finalPort", name = model, ip = finalIp, port = finalPort,
+                    model = model, isConnected = true
+                )
+                _devices.value = listOf(device) + _devices.value.filter { it.id != device.id }
+                return@withContext Result.success(Unit)
+            } catch (e: Exception) {
+                lastError = e
+                Log.w(tag, "ADB handshake attempt $attempt failed: ${e.javaClass.simpleName}: ${e.message}")
+                try { session?.close() } catch (_: Exception) {}
+                if (attempt < 5) kotlinx.coroutines.delay(1400)
+            }
+        }
+        disconnect()
+        val detail = lastError?.message?.take(170) ?: "ADB authentication timed out"
+        Result.failure(Exception(
+            "TV found, but ADB handshake failed after 5 attempts. On TV, enable Network/USB debugging and approve this phone's RSA prompt, then tap Retry. " +
+                "If TV uses Android 11+ Wireless Debugging pairing-code/TLS, this beta does not support that mode. Details: $detail",
+            lastError
+        ))
     }
 
     fun disconnect() {

@@ -50,6 +50,12 @@ class MainViewModel @Inject constructor(
     }
 
     // ── PC ────────────────────────────────────────────────────
+    /** Scan both protocols together; a Windows device requires the PC host running. */
+    fun scanNearby() {
+        scanAndroid()
+        scanPc()
+    }
+
     fun scanPc() = viewModelScope.launch {
         if (_uiState.value.isScanningPc) return@launch
         _uiState.update { it.copy(isScanningPc = true) }
@@ -111,8 +117,13 @@ class MainViewModel @Inject constructor(
     fun scanAndroid() = viewModelScope.launch {
         if (_uiState.value.isScanning) return@launch
         _uiState.update { it.copy(isScanning = true) }
-        repository.scanAndroidDevices()
-        _uiState.update { it.copy(isScanning = false) }
+        try {
+            repository.scanAndroidDevices()
+        } catch (e: Exception) {
+            showMessage("TV scan failed: ${e.message}")
+        } finally {
+            _uiState.update { it.copy(isScanning = false) }
+        }
     }
 
     fun connectAndroid(device: AndroidDevice) = viewModelScope.launch {
