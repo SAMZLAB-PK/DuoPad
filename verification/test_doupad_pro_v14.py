@@ -23,6 +23,6 @@ assert 'Executors.newFixedThreadPool(2)' in mirror
 assert 'generation.get() == ticket' in mirror
 assert 'current.close()' in mirror
 assert 'MirrorCrashRecorder.finish(this' in mirror
-assert 'versionCode = 14' in gradle
-assert '0.14.0-mirror-recovery-beta' in gradle
+assert 'versionCode = 15' in gradle
+assert '0.15.0-tvbox-encoder-beta' in gradle
 print('DOUPAD_PRO_V14_MIRROR_TELEMETRY_AND_ROTATION_RECOVERY_PASS')
