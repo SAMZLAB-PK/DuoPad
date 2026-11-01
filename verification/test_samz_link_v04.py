@@ -7,11 +7,11 @@ assert "isPortOpen(ip, port, 360)" in scan
 for forbidden in ("Dadb.create(", "keyPairOrNull(", ".shell(", "AdbKeyPair", "adb.connect("):
     assert forbidden not in scan, "Discovery attempted ADB authentication: "+forbidden
 assert "Dadb.create(finalIp, finalPort, keyPair" in adb
-assert 'Quick("Remote"' in ui and 'openNearby("Remote")' in ui
+assert 'ConceptAction("Remote"' in ui and 'openNearby("Remote")' in ui
 assert 'openNearby("Mirror")' in ui
-assert 'openNearby("Send files")' in ui
-assert 'openNearby("Install APK")' in ui
-assert '4->{' in ui and 'Text("Nearby devices"' in ui
+assert '"Send files" ->' in ui
+assert '"Install APK" ->' in ui
+assert '4->{' in ui and 'Text("Devices"' in ui
 assert 'targetButton(Target(name,device.id,false' in ui or 'targetButton(Target(name,device.id,false,saved?.customName)' in ui
 assert 'targetButton(Target(name,host.address,true' in ui
 assert 'applySelectedAction()' in ui
