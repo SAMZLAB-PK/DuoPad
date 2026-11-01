@@ -691,9 +691,35 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
                         Icon(Icons.Default.Shield,null);Spacer(Modifier.width(8.dp));Text("Live video · Compatibility decoder")
                     }
+                    OutlinedButton(onClick={
+                        if(requireTv()){
+                            val endpoint=status.address
+                            MirrorCrashRecorder.launch(context,!endpoint.isNullOrBlank())
+                            MirrorCrashRecorder.note(context,
+                                "Aceconn mode requested: alternate device-side H.264 encoders")
+                            try{
+                                context.startActivity(
+                                    Intent(context,DoupadMirrorActivity::class.java)
+                                        .putExtra("endpoint",endpoint)
+                                        .putExtra("aceconn_mode",true)
+                                )
+                            }catch(error:Exception){
+                                MirrorCrashRecorder.note(context,
+                                    "ACE_CONTEXT_FAILED: ${error.javaClass.simpleName}: ${error.message}")
+                                MirrorCrashRecorder.finish(context,"TV-box mode launch failed")
+                                message("Could not open TV-box mode: ${error.message}")
+                            }
+                        }
+                    },modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
+                        Icon(Icons.Default.Tv,null);Spacer(Modifier.width(8.dp))
+                        Text("TV Box mode · Aceconn video fix")
+                    }
+                    Text("Use TV Box mode only when audio works but video is blank or flickers. It tries alternate H.264 encoders and falls back to default.",
+                        fontSize=12.sp,color=Muted)
                     Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){Quick("Screenshot",Icons.Default.PhotoCamera,Modifier.weight(1f)){if(requireTv()){detail="preview"}};Quick("Record",Icons.Default.FiberManualRecord,Modifier.weight(1f)){dialog="record"}}
                     Text("Video streaming",fontWeight=FontWeight.SemiBold);Text("Hardware-decoded H.264 • up to 30 fps • adaptive setup",fontSize=12.sp,color=Muted)
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Column{Text("Include TV audio",fontWeight=FontWeight.SemiBold);Text("Video-only in this beta",fontSize=12.sp,color=Muted)};Switch(checked=false,onCheckedChange={message("Audio forwarding is not enabled in this beta.")})}
+                    Text("TV audio: enabled on supported Android versions; silent or protected content may not be capturable.",
+                        fontSize=12.sp,color=Muted)
                     OutlinedButton(onClick={detail="mirrorLog"},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp)){
                         Icon(Icons.Default.BugReport,null);Spacer(Modifier.width(7.dp));Text("Mirror diagnostics & error log")
                     }
