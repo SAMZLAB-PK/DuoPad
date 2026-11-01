@@ -164,7 +164,6 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         createControls()
         root.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ ->
             session?.let { fitSurface(it.displayWidth,it.displayHeight) }
-            createControls()
         }
         // Defer fullscreen flags until the DecorView is attached to a window.
         root.post {
