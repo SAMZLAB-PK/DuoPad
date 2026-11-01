@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import com.unipoint.presentation.ui.navigation.UniPointNavHost
 import com.unipoint.presentation.ui.theme.UniPointTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -27,6 +28,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Warm-white Concept 04 requires dark, legible system-bar glyphs.
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
+        }
         setContent {
             UniPointTheme {
                 Surface(
