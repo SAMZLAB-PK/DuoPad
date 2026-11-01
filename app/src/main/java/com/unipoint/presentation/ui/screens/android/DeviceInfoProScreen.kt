@@ -42,9 +42,9 @@ fun DeviceInfoProScreen(
         )
         loading = false
     }
-    val ink=Color(0xFF122438)
-    val muted=Color(0xFF6B788A)
-    val teal=Color(0xFF008C92)
+    val ink=Color(0xFF171717)
+    val muted=Color(0xFF77736F)
+    val teal=Color(0xFF181818)
     @Composable fun Detail(key:String,label:String) {
         Column(Modifier.fillMaxWidth().padding(vertical=6.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
             Text(label,fontSize=11.sp,color=muted)
@@ -59,14 +59,14 @@ fun DeviceInfoProScreen(
         ) {
             Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
                 Text(title,fontWeight=FontWeight.Bold,fontSize=15.sp,color=teal)
-                HorizontalDivider(color=Color(0xFFE8EDF1))
+                HorizontalDivider(color=Color(0xFFE6E1DC))
                 body()
             }
         }
     }
 
     Scaffold(
-        containerColor=Color(0xFFF8FAFC),
+        containerColor=Color(0xFFFCFAF8),
         topBar={
             TopAppBar(
                 title={Text("Device information",fontWeight=FontWeight.Bold)},
@@ -86,7 +86,7 @@ fun DeviceInfoProScreen(
                 OutlinedButton(onClick={refresh++}){Text("Retry")}
             }
             if(info.isNotEmpty()){
-                Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFE6F7F7)),shape=RoundedCornerShape(16.dp)){
+                Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFF2EFEB)),shape=RoundedCornerShape(16.dp)){
                     Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
                         Icon(Icons.Default.Tv,null,Modifier.size(42.dp),tint=teal)
                         Spacer(Modifier.width(12.dp))
