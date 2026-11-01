@@ -18,5 +18,5 @@ assert 'Live video · Compatibility decoder' in ui
 assert 'PREVIOUS_MIRROR_UNEXPECTED_EXIT' in recorder
 assert 'UNCAUGHT_EXCEPTION' in recorder
 assert 'ApplicationExitInfo.REASON_CRASH_NATIVE' in report
-assert 'versionCode = 13' in (root/"app/build.gradle.kts").read_text()
+assert 'versionCode = 14' in (root/"app/build.gradle.kts").read_text()
 print("DOUPAD_PRO_V08_CRASH_RECORDER_PASS")
