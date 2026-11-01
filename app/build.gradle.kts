@@ -15,8 +15,8 @@ android {
         applicationId = "com.samz.samzlink"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.14.0-mirror-recovery-beta"
+        versionCode = 15
+        versionName = "0.15.0-tvbox-encoder-beta"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
