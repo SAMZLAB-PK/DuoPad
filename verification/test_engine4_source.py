@@ -7,8 +7,8 @@ protocol = (ROOT / 'app/src/main/java/com/unipoint/data/remote/ScrcpyControlProt
 mirror = (ROOT / 'app/src/main/java/com/unipoint/presentation/ui/DoupadMirrorActivity.kt').read_text(encoding='utf-8')
 manifest = (ROOT / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
 
-assert 'versionName = "0.12.0-reference-perfect-beta"' in build
-assert 'versionCode = 12' in build
+assert 'versionName = "0.13.0-connected-tools-audio-beta"' in build
+assert 'versionCode = 13' in build
 
 # Android-device discovery must not stop at .40; boxes commonly get higher DHCP addresses.
 assert '1..254' in adb, 'primary LAN ADB scan must cover the complete /24 address range'
@@ -23,7 +23,7 @@ assert 'ScrcpyControlProtocol.touch' in adb, 'SDK/touch fallback must remain ava
 # Adaptive H.264 pipeline uses 960p/24fps then 720p/15fps compatibility fallback.
 assert 'max_fps=${profile.fps}' in mirror
 assert 'video_bit_rate=${profile.bitRate}' in mirror
-assert 'VideoProfile(720, 15, 1_200_000, true)' in mirror
+assert 'VideoProfile(720, 15, 1_200_000, true, false)' in mirror
 assert 'WindowInsets.Type.systemBars()' in mirror
 assert 'SYSTEM_UI_FLAG_IMMERSIVE_STICKY' in mirror
 
