@@ -12,12 +12,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 // Concept 04: neutral ink, warm-white backgrounds and soft-gray controls.
-private val Ink = Color(0xFF181818)
-private val WarmWhite = Color(0xFFFCFAF8)
-private val Paper = Color(0xFFFFFFFF)
-private val SoftGray = Color(0xFFF3F0EC)
-private val GrayText = Color(0xFF686663)
-private val DividerGray = Color(0xFFE6E1DC)
+private val Ink = Color(0xFF121212)
+private val WarmWhite = Color(0xFFF7F4F1)
+private val Paper = Color(0xFFFCF9F6)
+private val SoftGray = Color(0xFFF0ECE9)
+private val GrayText = Color(0xFF595653)
+private val DividerGray = Color(0xFFE3DEDA)
 
 private val DarkColorScheme = darkColorScheme(
     primary = Color.White, onPrimary = Ink,
@@ -30,7 +30,7 @@ private val DarkColorScheme = darkColorScheme(
 private val LightColorScheme = lightColorScheme(
     primary = Ink, onPrimary = Color.White,
     primaryContainer = SoftGray, onPrimaryContainer = Ink,
-    secondary = Color(0xFF3B3938), onSecondary = Color.White,
+    secondary = Color(0xFF171717), onSecondary = Color.White,
     secondaryContainer = SoftGray, onSecondaryContainer = Ink,
     tertiary = Ink, onTertiary = Color.White,
     error = Color(0xFFB3261E),
