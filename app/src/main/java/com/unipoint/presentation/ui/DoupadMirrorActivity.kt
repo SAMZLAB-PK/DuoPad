@@ -63,6 +63,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     private var lastFitSignature = ""
     private val surfaceStartHandler = Handler(Looper.getMainLooper())
     @Volatile private var muted = false
+    // Manual selection avoids confusing legitimate static/DRM black frames with
+    // encoder failure. This setting only affects the opt-in TV Box mode.
+    private var aceconnEncoderIndex=0
+    private var lastVideoSampleHash:Int?=null
     private var topControls:LinearLayout?=null
     private var leftControls:LinearLayout?=null
     private var rightControls:LinearLayout?=null
@@ -289,9 +293,23 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                         }
                     }
                     val ratio=if(sampled>0) dark*100/sampled else 0
+                    var fingerprint=1
+                    for(y in 0 until image.height step 2){
+                        for(x in 0 until image.width step 2){
+                            fingerprint=31*fingerprint+image.getPixel(x,y)
+                        }
+                    }
+                    val unchanged=lastVideoSampleHash==fingerprint
+                    lastVideoSampleHash=fingerprint
                     MirrorCrashRecorder.note(this,
                         "VISIBLE_VIDEO_SAMPLE: blackPixels=$ratio%, pixelCopy=SUCCESS, " +
-                            "ticket=$ticket (dark scenes/DRM may also appear black)")
+                            "frameHash=${fingerprint.toUInt().toString(16)}, " +
+                            "sameAsPrevious=$unchanged, ticket=$ticket " +
+                            "(static scenes/DRM may also appear black)")
+                    if(ratio>=99 && intent.getBooleanExtra("aceconn_mode",false)){
+                        status.visibility=View.VISIBLE
+                        status.text="Video appears black. On the TV Home screen try ENC to change encoder."
+                    }
                 }else MirrorCrashRecorder.note(this,
                     "VISIBLE_VIDEO_SAMPLE: PixelCopy result=$result ticket=$ticket")
                 image.recycle()
@@ -361,6 +379,36 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }.onFailure{MirrorCrashRecorder.note(this,"VOICE_SEND_ERROR: ${it.message}")}
         }
     }
+    private fun nextTvBoxEncoder(){
+        if(!intent.getBooleanExtra("aceconn_mode",false))return
+        val names=listOf("c2.android.avc.encoder","OMX.google.h264.encoder","system-default")
+        aceconnEncoderIndex=(aceconnEncoderIndex+1)%names.size
+        val ticket=generation.incrementAndGet()
+        MirrorCrashRecorder.note(this,
+            "MANUAL_ENCODER_SWITCH: selected=${names[aceconnEncoderIndex]}, ticket=$ticket")
+        lastVideoSampleHash=null
+        status.visibility=View.VISIBLE
+        status.text="Switching video encoder to ${names[aceconnEncoderIndex]}…"
+        val current=session
+        // Closing the previous ADB and AudioTrack before opening replacement
+        // prevents overlapped video/audio streams and associated flicker.
+        current?.close()
+        surfaceStartHandler.postDelayed({
+            if(generation.get()!=ticket || isFinishing || isDestroyed ||
+                !surface.holder.surface.isValid){
+                MirrorCrashRecorder.note(this,
+                    "MANUAL_ENCODER_SWITCH_SKIPPED: stale surface ticket=$ticket")
+            } else {
+                runCatching { worker.execute { stream(surface.holder,ticket) } }
+                    .onFailure {
+                        MirrorCrashRecorder.note(this,
+                            "MANUAL_ENCODER_SWITCH_ERROR: ${it.javaClass.simpleName}: ${it.message}")
+                        show(ticket,"Cannot switch encoder: ${it.message}")
+                    }
+            }
+        },600L)
+    }
+
     private fun createControls(){
         if(!::root.isInitialized)return
         listOfNotNull(topControls,leftControls,rightControls,bottomControls).forEach{
@@ -393,7 +441,15 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         }
         val shot=remoteButton("▣"){saveScreenshot()}
         val close=remoteButton("×"){finish()}
-        listOf(back,audio,rotate,shot,close).forEach{button->
+        val headerButtons=mutableListOf(back,audio,rotate,shot)
+        if(intent.getBooleanExtra("aceconn_mode",false)){
+            headerButtons.add(remoteButton("ENC"){nextTvBoxEncoder()}.apply{
+                textSize=13f
+                contentDescription="Try next Aceconn video encoder"
+            })
+        }
+        headerButtons.add(close)
+        headerButtons.forEach{button->
             val params=LinearLayout.LayoutParams(0,dp(39),1f)
             params.setMargins(dp(2),0,dp(2),0)
             header.addView(button,params)
@@ -499,6 +555,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         val ticket = generation.incrementAndGet()
+        lastVideoSampleHash=null
         // A new Surface must never share the old MediaCodec's socket/session.
         session?.let { if(!it.closed) it.close() }
         MirrorCrashRecorder.note(this,"SURFACE_CREATED: ticket=$ticket; delayed for surface stabilization")
@@ -550,18 +607,18 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         // firmware streams video reliably but rejects the second abstract socket.
         val aceconnMode=intent.getBooleanExtra("aceconn_mode",false)
         val profiles=if(aceconnMode) listOf(
-            // Optional device-side SOFTWARE encoders avoid broken OEM H.264 capture.
-            // Availability varies by firmware: failed encoder attempts fall back.
+            // Test available H.264 encoders individually; a decoded black frame
+            // is not proof of valid captured video on vendor TV boxes.
             VideoProfile(720,15,1_200_000,true,true,"c2.android.avc.encoder"),
             VideoProfile(640,12,900_000,true,true,"OMX.google.h264.encoder"),
             VideoProfile(720,15,1_200_000,true,true)
-        ) else listOf(
+        ).drop(aceconnEncoderIndex) else listOf(
             VideoProfile(960, 24, 2_000_000, true, true),
             VideoProfile(720, 15, 1_200_000, true, false)
         )
         MirrorCrashRecorder.note(this,
             "STREAM_MODE: ${if(aceconnMode)"TV_BOX_COMPATIBILITY" else "STANDARD"}; " +
-                "profileCount=${profiles.size}")
+                "profileCount=${profiles.size}; selectedIndex=${if(aceconnMode)aceconnEncoderIndex else 0}")
         for ((index, profile) in profiles.withIndex()) {
             if (generation.get() != ticket) return
             checkpoint(ticket,
@@ -859,10 +916,16 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                                 runOnUiThread {
                                     if(generation.get()==ticket) {
                                         status.visibility=View.GONE
-                                        surfaceStartHandler.postDelayed({
-                                            if(generation.get()==ticket && !current.closed)
-                                                sampleVisibleVideo(ticket)
-                                        },2500L)
+                                        // Multiple low-resolution visual samples distinguish
+                                        // sustained black content from transient transitions.
+                                        // Do not automatically restart for black samples:
+                                        // black TV scenes and DRM may be legitimate.
+                                        listOf(2500L,6500L,11000L).forEach { delay ->
+                                            surfaceStartHandler.postDelayed({
+                                                if(generation.get()==ticket && !current.closed)
+                                                    sampleVisibleVideo(ticket)
+                                            },delay)
+                                        }
                                     }
                                 }
                             }
