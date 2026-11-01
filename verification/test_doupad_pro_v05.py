@@ -7,7 +7,7 @@ strings=(root/"app/src/main/res/values/strings.xml").read_text()
 icon=(root/"app/src/main/res/drawable/ic_launcher.xml").read_text()
 build=(root/"app/build.gradle.kts").read_text()
 assert '<string name="app_name">DouPad Pro</string>' in strings
-assert 'versionName = "0.13.0-connected-tools-audio-beta"' in build and 'versionCode = 13' in build
+assert 'versionName = "0.14.0-mirror-recovery-beta"' in build and 'versionCode = 14' in build
 assert 'listOf("Android TV","All","Saved","PC")' in ui
 assert 'Live video · H.264 low-latency' in ui
 assert 'AdbShellScreen' in ui and 'AndroidGamepadScreen' in ui and 'RemoteMappingScreen' in ui
