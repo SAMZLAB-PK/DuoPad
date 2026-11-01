@@ -53,10 +53,14 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var surface: SurfaceView
     private lateinit var status: TextView
     private val generation = AtomicInteger()
-    private val worker = Executors.newSingleThreadExecutor()
+    // After a phone rotation the previous ADB socket reader may still be unwinding.
+    // A second worker lets the new Surface start without waiting behind that reader.
+    // The generation token prevents stale workers from touching the new session.
+    private val worker = Executors.newFixedThreadPool(2)
     private val inputWorker = Executors.newSingleThreadExecutor()
     @Volatile private var session: Session? = null
     @Volatile private var stage: String = "Not started"
+    private var lastFitSignature = ""
     @Volatile private var muted = false
     private var topControls:LinearLayout?=null
     private var leftControls:LinearLayout?=null
@@ -205,6 +209,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        MirrorCrashRecorder.note(this,
+            "CONFIG_CHANGED: orientation=${newConfig.orientation}, surfaceAlive=${session?.closed==false}")
         enterImmersive()
         root.post {
             createControls()
@@ -227,6 +233,12 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         val scale=minOf(w.toFloat()/videoWidth,h.toFloat()/videoHeight)
         surface.scaleX=(videoWidth*scale)/w
         surface.scaleY=(videoHeight*scale)/h
+        val signature="${w}x${h} -> ${videoWidth}x${videoHeight}"
+        if(lastFitSignature!=signature){
+            lastFitSignature=signature
+            MirrorCrashRecorder.note(this,
+                "VIDEO_FIT: $signature; scaleX=${surface.scaleX}; scaleY=${surface.scaleY}")
+        }
     }
 
     private fun dp(value:Int):Int=(value*resources.displayMetrics.density+0.5f).toInt()
@@ -457,6 +469,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     override fun surfaceCreated(holder: SurfaceHolder) {
         val ticket = generation.incrementAndGet()
         MirrorCrashRecorder.note(this,"SURFACE_CREATED: surface ready; starting worker ticket=$ticket")
+        if(ticket>1)MirrorCrashRecorder.note(this,
+            "SURFACE_RESTART: ticket=$ticket; waiting for previous stream cleanup=false")
         runCatching { worker.execute { stream(holder, ticket) } }
             .onFailure {
                 MirrorCrashRecorder.note(this,"WORKER_START_FAILED: ${it.javaClass.simpleName}: ${it.message}")
@@ -470,7 +484,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        generation.incrementAndGet()
+        val next=generation.incrementAndGet()
+        MirrorCrashRecorder.note(this,
+            "SURFACE_DESTROYED: generation=$next, closing active session")
         session?.close()
     }
 
@@ -662,7 +678,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                             audioTrack.setVolume(if(muted)0f else 1f)
                             audioTrack.play()
                             MirrorCrashRecorder.note(this@DoupadMirrorActivity,
-                                "AUDIO_READY: raw PCM stereo / 48 kHz")
+                                "AUDIO_READY: raw PCM stereo / 48 kHz; playState=${audioTrack.playState}")
+                            var audioPackets=0
+                            var audioBytes=0L
                             while(!current.closed && generation.get()==ticket){
                                 val header=audioSource.readLong()
                                 val packetSize=audioSource.readInt()
@@ -673,8 +691,21 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                                 while(sent<bytes.size && !current.closed){
                                     val n=audioTrack.write(bytes,sent,bytes.size-sent,
                                         AudioTrack.WRITE_BLOCKING)
-                                    if(n<=0)break
+                                    if(n<=0) {
+                                        MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                            "AUDIO_WRITE_FAILED: result=$n; packets=$audioPackets")
+                                        break
+                                    }
                                     sent+=n
+                                }
+                                if(sent>0){
+                                    audioPackets++
+                                    audioBytes+=sent
+                                    if(audioPackets==1 || audioPackets%200==0){
+                                        MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                            "AUDIO_PLAYBACK: packets=$audioPackets, bytes=$audioBytes, " +
+                                                "muted=$muted, playState=${audioTrack.playState}")
+                                    }
                                 }
                             }
                         } else {
@@ -753,7 +784,12 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                         val index = codec.dequeueOutputBuffer(info, 10000)
                         if (index >= 0) {
                             codec.releaseOutputBuffer(index, true)
-                            renderedCount.incrementAndGet()
+                            val outputFrames=renderedCount.incrementAndGet()
+                            if(outputFrames%200==0){
+                                MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                    "VIDEO_OUTPUT: rendered=$outputFrames, packets=${packetCount.get()}, " +
+                                        "queued=${queuedCount.get()}, outputSize=${info.size}")
+                            }
                             if (firstFrame.compareAndSet(false, true)) {
                                 MirrorCrashRecorder.note(this@DoupadMirrorActivity,
                                     "FIRST_FRAME_RENDERED: packets=${packetCount.get()}, " +
