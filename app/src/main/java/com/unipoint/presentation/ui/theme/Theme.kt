@@ -11,44 +11,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-private val Navy950 = Color(0xFF07111F)
-private val Navy900 = Color(0xFF0B1728)
-private val Navy800 = Color(0xFF10243A)
-private val Slate = Color(0xFF9FB0C5)
-private val White = Color(0xFFFBFCFD)
-private val Teal = Color(0xFF18D6C2)
-private val Cyan = Color(0xFF42C8FF)
-private val Amber = Color(0xFFFFB84D)
-private val Red = Color(0xFFFF6B7A)
+// Concept 04: neutral ink, warm-white backgrounds and soft-gray controls.
+private val Ink = Color(0xFF181818)
+private val WarmWhite = Color(0xFFFCFAF8)
+private val Paper = Color(0xFFFFFFFF)
+private val SoftGray = Color(0xFFF3F0EC)
+private val GrayText = Color(0xFF686663)
+private val DividerGray = Color(0xFFE6E1DC)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Teal,
-    secondary = Cyan,
-    tertiary = Amber,
-    error = Red,
-    background = Navy950,
-    surface = Navy900,
-    surfaceVariant = Navy800,
-    onPrimary = Color(0xFF00251F),
-    onSecondary = Color(0xFF001D29),
-    onBackground = White,
-    onSurface = White,
-    onSurfaceVariant = Slate
+    primary = Color.White, onPrimary = Ink,
+    secondary = Color.White, onSecondary = Ink,
+    background = Ink, onBackground = Color.White,
+    surface = Ink, onSurface = Color.White,
+    surfaceVariant = Color(0xFF292929),
+    onSurfaceVariant = Color(0xFFD5D5D5)
 )
-
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF008C91),
-    secondary = Color(0xFF00739E),
-    tertiary = Color(0xFF9A5A00),
+    primary = Ink, onPrimary = Color.White,
+    primaryContainer = SoftGray, onPrimaryContainer = Ink,
+    secondary = Color(0xFF3B3938), onSecondary = Color.White,
+    secondaryContainer = SoftGray, onSecondaryContainer = Ink,
+    tertiary = Ink, onTertiary = Color.White,
     error = Color(0xFFB3261E),
-    background = Color(0xFFFBFCFD),
-    surface = Color.White,
-    surfaceVariant = Color(0xFFE8EEF5),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onBackground = Color(0xFF101820),
-    onSurface = Color(0xFF101820),
-    onSurfaceVariant = Color(0xFF536477)
+    background = WarmWhite, onBackground = Ink,
+    surface = Paper, onSurface = Ink,
+    surfaceVariant = SoftGray, onSurfaceVariant = GrayText,
+    outline = DividerGray, outlineVariant = DividerGray
 )
 
 @Composable
