@@ -30,6 +30,6 @@ assert 'Triple("Info",Icons.Default.Info,"infoFull")' in shell
 assert 'FontFamily.SansSerif' in typography
 assert 'FontWeight.Black' in typography
 assert '#171717' in logo and '#FFFFFF' in logo
-assert 'versionCode = 15' in build
-assert '0.15.0-tvbox-encoder-beta' in build
+assert 'versionCode = 16' in build
+assert '0.16.0-aceconn-encoder-switch-beta' in build
 print("DOUPAD_PRO_V12_REFERENCE_UI_SOURCE_PASS")
