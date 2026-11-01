@@ -14,6 +14,6 @@ assert 'MediaCodec.BUFFER_FLAG_CODEC_CONFIG' in video
 assert 'MediaCodec.BUFFER_FLAG_KEY_FRAME' in video
 assert 'if (generation.get() == ticket && !firstFrame.get())' in video
 assert 'No decoded frame: packets=' in video
-assert 'versionCode = 12' in build
-assert 'versionName = "0.12.0-reference-perfect-beta"' in build
+assert 'versionCode = 13' in build
+assert 'versionName = "0.13.0-connected-tools-audio-beta"' in build
 print("DOUPAD_PRO_V10_FRAME_WATCHDOG_CHECKS_PASS")
