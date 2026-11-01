@@ -293,7 +293,6 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 }
             }
         }
-    }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=15.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             when(page) {
