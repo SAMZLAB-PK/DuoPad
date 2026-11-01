@@ -8,6 +8,9 @@ import android.graphics.Color
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.media.MediaCodecList
+import android.media.AudioTrack
+import android.media.AudioFormat
+import android.media.AudioAttributes
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -42,6 +45,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     private val inputWorker = Executors.newSingleThreadExecutor()
     @Volatile private var session: Session? = null
     @Volatile private var stage: String = "Not started"
+    @Volatile private var muted = false
 
     private fun checkpoint(ticket: Int, name: String) {
         stage = name
@@ -70,6 +74,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         @Volatile var closed = false
         var server: AdbStream? = null
         var video: AdbStream? = null
+        var audio: AdbStream? = null
+        var audioTrack: AudioTrack? = null
         var control: AdbStream? = null
         var codec: MediaCodec? = null
         var displayWidth = 0
@@ -80,6 +86,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             closed = true
             runCatching { control?.close() }
             runCatching { video?.close() }
+            runCatching { audio?.close() }
+            runCatching { audioTrack?.pause() }
+            runCatching { audioTrack?.flush() }
+            runCatching { audioTrack?.release() }
             runCatching { server?.close() }
             runCatching { adb.close() }
         }
@@ -285,15 +295,15 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private data class VideoProfile(
-        val maxSize: Int, val fps: Int, val bitRate: Int, val control: Boolean
+        val maxSize: Int, val fps: Int, val bitRate: Int, val control: Boolean, val audio: Boolean
     )
 
     private fun stream(holder: SurfaceHolder, ticket: Int) {
         // Second preset deliberately disables scrcpy control socket. Some Android TV
         // firmware streams video reliably but rejects the second abstract socket.
         val profiles = listOf(
-            VideoProfile(960, 24, 2_000_000, false),
-            VideoProfile(720, 15, 1_200_000, true)
+            VideoProfile(960, 24, 2_000_000, true, true),
+            VideoProfile(720, 15, 1_200_000, true, false)
         )
         for ((index, profile) in profiles.withIndex()) {
             if (generation.get() != ticket) return
@@ -342,7 +352,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             val id = "%08x".format(java.security.SecureRandom().nextInt(Int.MAX_VALUE))
             val command =
                 "CLASSPATH=/data/local/tmp/doupad-mirror.jar app_process / com.genymobile.scrcpy.Server 3.3.1 " +
-                    "scid=$id log_level=warn video=true audio=false control=${profile.control} tunnel_forward=true " +
+                    "scid=$id log_level=warn video=true control=${profile.control} audio=${profile.audio} audio_codec=raw tunnel_forward=true " +
                     "send_dummy_byte=false send_device_meta=false send_codec_meta=true send_frame_meta=true " +
                     "video_codec=h264 max_size=${profile.maxSize} max_fps=${profile.fps} " +
                     "video_bit_rate=${profile.bitRate} cleanup=true"
@@ -387,8 +397,22 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                     Thread.sleep(100)
                 }
             }
+            if (profile.audio) {
+                checkpoint(ticket, "Opening device audio socket")
+                // scrcpy socket order is VIDEO -> AUDIO -> CONTROL.
+                for (attempt in 0 until 20) {
+                    if (current.closed || generation.get()!=ticket) return
+                    try {
+                        current.audio = adb.open("localabstract:scrcpy_$id")
+                        break
+                    } catch (e: Exception) {
+                        if (attempt == 19) throw IOException("Audio socket unavailable", e)
+                        Thread.sleep(100)
+                    }
+                }
+            }
             if (profile.control) {
-                // Video and control are separate sockets. Keep the fallback video-only.
+                // scrcpy input channel is opened AFTER the audio socket.
                 for (attempt in 0 until 30) {
                     if (current.closed || generation.get() != ticket) return
                     try {
@@ -403,6 +427,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
             val source = current.video?.source ?: error("TV video socket unavailable")
             if (profile.control) check(current.control != null) { "TV control socket unavailable" }
+            if (profile.audio) check(current.audio != null) { "TV audio socket unavailable" }
             checkpoint(ticket, "Reading scrcpy codec metadata")
             val codecId = source.readInt()
             val width = source.readInt()
@@ -412,6 +437,64 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
             current.displayWidth = width
             current.displayHeight = height
+
+            if (profile.audio) {
+                val audioSource=current.audio?.source ?: error("Audio socket missing")
+                thread(name="doupad-raw-audio",isDaemon=true){
+                    try {
+                        val codecId=audioSource.readInt()
+                        if(codecId==0 || codecId==1){
+                            MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                "AUDIO_UNAVAILABLE: device reported codec status $codecId")
+                        } else if(codecId==0x00726177){
+                            val outputFormat=AudioFormat.Builder()
+                                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                                .setSampleRate(48000)
+                                .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                                .build()
+                            val outputAttributes=AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                                .build()
+                            val buffer=AudioTrack.getMinBufferSize(48000,
+                                AudioFormat.CHANNEL_OUT_STEREO,AudioFormat.ENCODING_PCM_16BIT)
+                                .coerceAtLeast(8192)
+                            val audioTrack=AudioTrack.Builder()
+                                .setAudioAttributes(outputAttributes)
+                                .setAudioFormat(outputFormat)
+                                .setBufferSizeInBytes(buffer*2)
+                                .setTransferMode(AudioTrack.MODE_STREAM)
+                                .build()
+                            current.audioTrack=audioTrack
+                            audioTrack.setVolume(if(muted)0f else 1f)
+                            audioTrack.play()
+                            MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                "AUDIO_READY: raw PCM stereo / 48 kHz")
+                            while(!current.closed && generation.get()==ticket){
+                                val header=audioSource.readLong()
+                                val packetSize=audioSource.readInt()
+                                require(packetSize in 1..1_048_576){"Invalid audio packet size: $packetSize"}
+                                val bytes=audioSource.readByteArray(packetSize.toLong())
+                                if(header<0) continue
+                                var sent=0
+                                while(sent<bytes.size && !current.closed){
+                                    val n=audioTrack.write(bytes,sent,bytes.size-sent,
+                                        AudioTrack.WRITE_BLOCKING)
+                                    if(n<=0)break
+                                    sent+=n
+                                }
+                            }
+                        } else {
+                            MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                "AUDIO_UNSUPPORTED_CODEC: $codecId; video will continue")
+                        }
+                    } catch(e:Exception){
+                        if(!current.closed && generation.get()==ticket)
+                            MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                "AUDIO_ERROR: ${e.javaClass.simpleName}: ${e.message}")
+                    }
+                }
+            }
 
             runOnUiThread {
                 if (generation.get() == ticket) {
