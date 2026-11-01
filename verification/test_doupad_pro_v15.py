@@ -21,6 +21,6 @@ assert 'surfaceStartHandler.removeCallbacksAndMessages(null)' in src
 assert 'TV Box mode · Aceconn video fix' in shell
 assert '.putExtra("aceconn_mode",true)' in shell
 assert 'Audio forwarding is not enabled in this beta.' not in shell
-assert 'versionCode = 15' in build
-assert 'versionName = "0.15.0-tvbox-encoder-beta"' in build
+assert 'versionCode = 16' in build
+assert 'versionName = "0.16.0-aceconn-encoder-switch-beta"' in build
 print("DOUPAD_V015_ACE_DEVICE_ENCODER_AND_FLICKER_REGRESSION_PASS")
