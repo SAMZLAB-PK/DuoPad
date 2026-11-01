@@ -61,6 +61,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var session: Session? = null
     @Volatile private var stage: String = "Not started"
     private var lastFitSignature = ""
+    private val surfaceStartHandler = Handler(Looper.getMainLooper())
     @Volatile private var muted = false
     private var topControls:LinearLayout?=null
     private var leftControls:LinearLayout?=null
@@ -271,6 +272,36 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
         }
     }
+    private fun sampleVisibleVideo(ticket:Int){
+        if(surface.width<=0||surface.height<=0||!surface.holder.surface.isValid)return
+        val image=Bitmap.createBitmap(48,27,Bitmap.Config.ARGB_8888)
+        try{
+            PixelCopy.request(surface,image,{result->
+                if(result==PixelCopy.SUCCESS){
+                    var dark=0
+                    var sampled=0
+                    for(y in 0 until image.height step 2){
+                        for(x in 0 until image.width step 2){
+                            val rgb=image.getPixel(x,y)
+                            val peak=maxOf(Color.red(rgb),Color.green(rgb),Color.blue(rgb))
+                            if(peak<18)dark++
+                            sampled++
+                        }
+                    }
+                    val ratio=if(sampled>0) dark*100/sampled else 0
+                    MirrorCrashRecorder.note(this,
+                        "VISIBLE_VIDEO_SAMPLE: blackPixels=$ratio%, pixelCopy=SUCCESS, " +
+                            "ticket=$ticket (dark scenes/DRM may also appear black)")
+                }else MirrorCrashRecorder.note(this,
+                    "VISIBLE_VIDEO_SAMPLE: PixelCopy result=$result ticket=$ticket")
+                image.recycle()
+            },Handler(Looper.getMainLooper()))
+        }catch(error:Exception){
+            image.recycle()
+            MirrorCrashRecorder.note(this,"VISIBLE_VIDEO_SAMPLE_ERROR: ${error.message}")
+        }
+    }
+
     private fun saveScreenshot(){
         if(surface.width<=0||surface.height<=0)return
         val bitmap=Bitmap.createBitmap(surface.width,surface.height,Bitmap.Config.ARGB_8888)
@@ -468,14 +499,21 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         val ticket = generation.incrementAndGet()
-        MirrorCrashRecorder.note(this,"SURFACE_CREATED: surface ready; starting worker ticket=$ticket")
+        MirrorCrashRecorder.note(this,"SURFACE_CREATED: ticket=$ticket; delayed for surface stabilization")
         if(ticket>1)MirrorCrashRecorder.note(this,
-            "SURFACE_RESTART: ticket=$ticket; waiting for previous stream cleanup=false")
-        runCatching { worker.execute { stream(holder, ticket) } }
-            .onFailure {
-                MirrorCrashRecorder.note(this,"WORKER_START_FAILED: ${it.javaClass.simpleName}: ${it.message}")
-                show(ticket, "Mirror surface unavailable: ${it.message}")
+            "SURFACE_RESTART: ticket=$ticket; old session invalidated")
+        surfaceStartHandler.postDelayed({
+            if(generation.get()!=ticket || isFinishing || isDestroyed || !holder.surface.isValid){
+                MirrorCrashRecorder.note(this,"SURFACE_START_SKIPPED: stale ticket=$ticket")
+            }else{
+                runCatching { worker.execute { stream(holder,ticket) } }
+                    .onFailure {
+                        MirrorCrashRecorder.note(this,
+                            "WORKER_START_FAILED: ${it.javaClass.simpleName}: ${it.message}")
+                        show(ticket,"Mirror surface unavailable: ${it.message}")
+                    }
             }
+        },350L)
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -493,6 +531,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     override fun onDestroy() {
         generation.incrementAndGet()
         session?.close()
+        surfaceStartHandler.removeCallbacksAndMessages(null)
         inputWorker.shutdownNow()
         worker.shutdownNow()
         MirrorCrashRecorder.finish(this, "Mirror Activity onDestroy")
@@ -500,20 +539,33 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private data class VideoProfile(
-        val maxSize: Int, val fps: Int, val bitRate: Int, val control: Boolean, val audio: Boolean
+        val maxSize: Int, val fps: Int, val bitRate: Int, val control: Boolean, val audio: Boolean,
+        val encoder: String? = null
     )
 
     private fun stream(holder: SurfaceHolder, ticket: Int) {
         // Second preset deliberately disables scrcpy control socket. Some Android TV
         // firmware streams video reliably but rejects the second abstract socket.
-        val profiles = listOf(
+        val aceconnMode=intent.getBooleanExtra("aceconn_mode",false)
+        val profiles=if(aceconnMode) listOf(
+            // Optional device-side SOFTWARE encoders avoid broken OEM H.264 capture.
+            // Availability varies by firmware: failed encoder attempts fall back.
+            VideoProfile(720,15,1_200_000,true,true,"c2.android.avc.encoder"),
+            VideoProfile(640,12,900_000,true,true,"OMX.google.h264.encoder"),
+            VideoProfile(720,15,1_200_000,true,true)
+        ) else listOf(
             VideoProfile(960, 24, 2_000_000, true, true),
             VideoProfile(720, 15, 1_200_000, true, false)
         )
+        MirrorCrashRecorder.note(this,
+            "STREAM_MODE: ${if(aceconnMode)"TV_BOX_COMPATIBILITY" else "STANDARD"}; " +
+                "profileCount=${profiles.size}")
         for ((index, profile) in profiles.withIndex()) {
             if (generation.get() != ticket) return
             checkpoint(ticket,
-                "Preparing H.264 stream ${index+1}/${profiles.size}: ${profile.maxSize}p / ${profile.fps}fps / control=${profile.control}")
+                "Preparing H.264 stream ${index+1}/${profiles.size}: " +
+                    "${profile.maxSize}p/${profile.fps}fps control=${profile.control} " +
+                    "encoder=${profile.encoder ?: "system-default"}")
             val result = runCatching { streamAttempt(holder, ticket, profile) }
             if (generation.get() != ticket) return
             if (result.isSuccess) return
@@ -555,12 +607,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
             adb.push(local, "/data/local/tmp/doupad-mirror.jar", 420)
             val id = "%08x".format(java.security.SecureRandom().nextInt(Int.MAX_VALUE))
+            val encoderOption=profile.encoder?.let { " video_encoder=$it" } ?: ""
             val command =
                 "CLASSPATH=/data/local/tmp/doupad-mirror.jar app_process / com.genymobile.scrcpy.Server 3.3.1 " +
                     "scid=$id log_level=warn video=true control=${profile.control} audio=${profile.audio} audio_codec=raw tunnel_forward=true " +
                     "send_dummy_byte=false send_device_meta=false send_codec_meta=true send_frame_meta=true " +
                     "video_codec=h264 max_size=${profile.maxSize} max_fps=${profile.fps} " +
-                    "video_bit_rate=${profile.bitRate} cleanup=true"
+                    "video_bit_rate=${profile.bitRate}$encoderOption cleanup=true"
             checkpoint(ticket, "Starting device-side video encoder")
             current.server = adb.open("shell:$command")
             // ADB shell is its own stream. Draining the server's stdout/stderr
@@ -642,6 +695,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
             current.displayWidth = width
             current.displayHeight = height
+            MirrorCrashRecorder.note(this,
+                "STREAM_VIDEO_DIMENSIONS: ${width}x${height}, encoder=${profile.encoder ?: "default"}")
             runOnUiThread {
                 if(generation.get()==ticket)
                     root.post { fitSurface(width,height) }
@@ -782,6 +837,11 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 try {
                     while (!current.closed && generation.get() == ticket) {
                         val index = codec.dequeueOutputBuffer(info, 10000)
+                        if(index==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){
+                            val newFormat=codec.outputFormat
+                            MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                "DECODER_FORMAT_CHANGED: $newFormat")
+                        }
                         if (index >= 0) {
                             codec.releaseOutputBuffer(index, true)
                             val outputFrames=renderedCount.incrementAndGet()
@@ -795,7 +855,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                                     "FIRST_FRAME_RENDERED: packets=${packetCount.get()}, " +
                                         "queued=${queuedCount.get()}, output=${renderedCount.get()}")
                                 runOnUiThread {
-                                    if (generation.get() == ticket) status.visibility = View.GONE
+                                    if(generation.get()==ticket) {
+                                        status.visibility=View.GONE
+                                        surfaceStartHandler.postDelayed({
+                                            if(generation.get()==ticket && !current.closed)
+                                                sampleVisibleVideo(ticket)
+                                        },2500L)
+                                    }
                                 }
                             }
                         }
