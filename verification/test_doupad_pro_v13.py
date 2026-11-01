@@ -27,5 +27,5 @@ assert 'PadButton("L3"' in pad and 'PadButton("R3"' in pad
 assert 'Stick("L"' in pad and 'Stick("R"' in pad
 assert 'Directions(size)' in pad and 'Face(size)' in pad
 assert 'LB' in pad and 'LT' in pad and 'RT' in pad and 'RB' in pad
-assert 'versionCode = 15' in build
+assert 'versionCode = 16' in build
 print('DOUPAD_V013_DEVICES_TOOLS_GAMEPAD_MIRROR_AUDIO_SOURCE_PASS')
