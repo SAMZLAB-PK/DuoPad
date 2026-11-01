@@ -14,6 +14,6 @@ assert 'MediaCodec.BUFFER_FLAG_CODEC_CONFIG' in video
 assert 'MediaCodec.BUFFER_FLAG_KEY_FRAME' in video
 assert 'if (generation.get() == ticket && !firstFrame.get())' in video
 assert 'No decoded frame: packets=' in video
-assert 'versionCode = 10' in build
-assert 'versionName = "0.10.0-frame-watchdog-beta"' in build
+assert 'versionCode = 11' in build
+assert 'versionName = "0.11.0-concept-04-beta"' in build
 print("DOUPAD_PRO_V10_FRAME_WATCHDOG_CHECKS_PASS")
