@@ -499,6 +499,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         val ticket = generation.incrementAndGet()
+        // A new Surface must never share the old MediaCodec's socket/session.
+        session?.let { if(!it.closed) it.close() }
         MirrorCrashRecorder.note(this,"SURFACE_CREATED: ticket=$ticket; delayed for surface stabilization")
         if(ticket>1)MirrorCrashRecorder.note(this,
             "SURFACE_RESTART: ticket=$ticket; old session invalidated")
