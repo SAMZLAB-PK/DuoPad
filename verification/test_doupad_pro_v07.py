@@ -18,6 +18,6 @@ assert 'MirrorDiagnosticsScreen' in ui
 assert 'Detail("ram"' in screen
 assert 'Detail("ip"' in screen
 assert '"infoFull"->{DeviceInfoProScreen' in ui
-assert 'versionCode = 14' in build
-assert 'versionName = "0.14.0-mirror-recovery-beta"' in build
+assert 'versionCode = 15' in build
+assert 'versionName = "0.15.0-tvbox-encoder-beta"' in build
 print("DOUPAD_PRO_V07_VIDEO_DIAGNOSTICS_PASS")
