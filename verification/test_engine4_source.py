@@ -7,8 +7,8 @@ protocol = (ROOT / 'app/src/main/java/com/unipoint/data/remote/ScrcpyControlProt
 mirror = (ROOT / 'app/src/main/java/com/unipoint/presentation/ui/DoupadMirrorActivity.kt').read_text(encoding='utf-8')
 manifest = (ROOT / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
 
-assert 'versionName = "0.11.0-concept-04-beta"' in build
-assert 'versionCode = 11' in build
+assert 'versionName = "0.12.0-reference-perfect-beta"' in build
+assert 'versionCode = 12' in build
 
 # Android-device discovery must not stop at .40; boxes commonly get higher DHCP addresses.
 assert '1..254' in adb, 'primary LAN ADB scan must cover the complete /24 address range'
