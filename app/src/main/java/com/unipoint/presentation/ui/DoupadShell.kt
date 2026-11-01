@@ -98,7 +98,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     var renameText by remember { mutableStateOf("") }
     var menuTarget by remember { mutableStateOf<String?>(null) }
     var airMouseSelected by rememberSaveable { mutableStateOf(false) }
-    var pendingQuickAction by rememberSaveable { mutableStateOf("Remote") }
+    var pendingQuickAction by rememberSaveable { mutableStateOf("Tools") }
     var targets by remember { mutableStateOf(readTargets(context)) }
     val status=state.connectionStatus
     val connected=status.state==ConnectionState.CONNECTED
@@ -808,7 +808,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
             }
         }
     }
-    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Color.White,title={Text(when(dialog){"connect"->"Add a device";"connectingSaved"->"Connecting to device";"rename"->"Rename device";"keyboard"->"Keyboard";"settings"->"DouPad Pro";"clearSaved"->"Clear saved devices?";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
+    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Color.White,title={Text(when(dialog){"connect"->"Add a device";"connectingSaved"->"Connecting to device";"rename"->"Rename device";"keyboard"->"Keyboard";"settings"->"DouPad Pro";"clearSaved"->"Clear saved devices?";"clearCache"->"Clear app caches?";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
             when(dialog){
                 "clearSaved"->{
@@ -976,7 +976,8 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 "gamepad"->{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("A" to 96,"B" to 97,"X" to 99,"Y" to 100).forEach{(label,code)->OutlinedButton(onClick={key(code)},contentPadding=PaddingValues(12.dp)){Text(label)}}};Pad(::key);Text("Key-based game controls; compatibility depends on the game.",fontSize=11.sp,color=Muted)}
                 "mapping"->Text("Custom mapping storage is not included in this native beta. Standard Android remote keycodes are used.")
                 "cast"->Text("This beta supports TV → phone. Phone → TV casting requires a receiver integration and is not enabled yet.")
-                "record"->Text("Recording is not enabled in this native beta. Live H.264 video and screenshots can be tested now.")
+                "record"->Text("Screen recording is not yet available in this build. Live H.264 mirror and screenshot capture are separate tools.")
+                "clearCache"->Text("Ask Android to release reclaimable application caches on the connected TV. App data will not be erased.")
                 else->Text(output.ifBlank{"No additional details."},fontSize=13.sp)
             }
         }
@@ -1007,9 +1008,10 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
             }
             "keyboard"->{if(state.mode==AppMode.ANDROID)vm.executeAdb(AdbCommand.InputText(command)) else vm.sendText(command);dialog=null}
             "Confirm power action"->{showCommand("Power result",command)}
+            "clearCache"->{showCommand("Clear cache","pm trim-caches 1G")}
             else->dialog=null
         }
-    }){Text(when(dialog){"rename"->"Save";"clearSaved"->"Clear";"connectingSaved"->if(status.state==ConnectionState.CONNECTING)"Connecting…" else "Retry";"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else if(connectRequested&&status.state==ConnectionState.ERROR)"Retry" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
+    }){Text(when(dialog){"rename"->"Save";"clearSaved"->"Clear";"clearCache"->"Confirm";"connectingSaved"->if(status.state==ConnectionState.CONNECTING)"Connecting…" else "Retry";"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else if(connectRequested&&status.state==ConnectionState.ERROR)"Retry" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
 }
 
 @Composable private fun ConceptAction(
