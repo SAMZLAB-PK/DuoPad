@@ -152,7 +152,7 @@ fun AndroidMousePadScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFFFBFCFD),
+        containerColor = Color(0xFFFCFAF8),
         topBar = {
             TopAppBar(
                 modifier = Modifier.pointerInput(airMouse) {
@@ -181,7 +181,7 @@ fun AndroidMousePadScreen(
         }
     ) { padding ->
         Box(
-            Modifier.fillMaxSize().background(Color(0xFFFBFCFD)).padding(padding)
+            Modifier.fillMaxSize().background(Color(0xFFFCFAF8)).padding(padding)
         ) {
             Column(
                 Modifier.fillMaxSize().padding(14.dp),
@@ -189,7 +189,7 @@ fun AndroidMousePadScreen(
             ) {
                 if (airMouse) {
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                        Text("Motion control", modifier=Modifier.weight(1f),color=Color(0xFF102033))
+                        Text("Motion control", modifier=Modifier.weight(1f),color=Color(0xFF171717))
                         Switch(checked=motionEnabled && gyro != null,
                             onCheckedChange={motionEnabled=it},enabled=gyro != null)
                     }
@@ -197,7 +197,7 @@ fun AndroidMousePadScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F5F7))
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF2EFEB))
                 ) {
                     Box(
                         Modifier.fillMaxSize()
