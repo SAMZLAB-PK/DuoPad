@@ -30,6 +30,6 @@ assert 'Triple("Info",Icons.Default.Info,"infoFull")' in shell
 assert 'FontFamily.SansSerif' in typography
 assert 'FontWeight.Black' in typography
 assert '#171717' in logo and '#FFFFFF' in logo
-assert 'versionCode = 13' in build
-assert '0.13.0-connected-tools-audio-beta' in build
+assert 'versionCode = 14' in build
+assert '0.14.0-mirror-recovery-beta' in build
 print("DOUPAD_PRO_V12_REFERENCE_UI_SOURCE_PASS")
