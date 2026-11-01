@@ -14,6 +14,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -34,6 +35,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import com.unipoint.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,13 +53,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-private val Teal = Color(0xFF181818) // Concept 04 accent: near-black ink
-private val Ink = Color(0xFF171717)
-private val Muted = Color(0xFF77736F)
-private val Border = Color(0xFFE6E1DC)
-private val Pale = Color(0xFFF2EFEB)
-private val Background = Color(0xFFFCFAF8)
-private val Online = Color(0xFF19B342)
+// Source of truth: user-approved Concept 04 reference (warm cream + pure ink).
+private val Teal = Color(0xFF171717)
+private val Ink = Color(0xFF121212)
+private val Muted = Color(0xFF595653)
+private val Border = Color(0xFFE3DEDA)
+private val Pale = Color(0xFFF0ECE9)
+private val Background = Color(0xFFF7F4F1)
+private val Paper = Color(0xFFFCF9F6)
+private val Online = Color(0xFF0CCB37)
 private data class Target(val name:String,val endpoint:String,val pc:Boolean,val customName:String?=null)
 private fun readTargets(context:Context):List<Target> = runCatching {
     val a=JSONArray(context.getSharedPreferences("doupad",0).getString("targets","[]"))
@@ -244,160 +249,215 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         "pcKeyboard"->{KeyboardScreen(onBack=back);return}
     }
     Scaffold(containerColor=Background,snackbarHost={SnackbarHost(snack)},bottomBar={
-        NavigationBar(
-            containerColor=Color.White,tonalElevation=0.dp,
-            modifier=Modifier.border(BorderStroke(0.5.dp,Border))
-        ) {
-            val tabs=listOf(
-                Triple("Home",Icons.Default.Home,0),
-                Triple("Devices",Icons.Default.Devices,4),
-                Triple("Tools",Icons.Default.Build,3),
-                Triple("Settings",Icons.Default.Settings,5)
-            )
-            tabs.forEach { (label,icon,destination) ->
-                NavigationBarItem(
-                    selected=page==destination,
-                    onClick={if(destination==4)openNearby("Remote") else {page=destination;detail=null}},
-                    icon={Icon(icon,label,Modifier.size(21.dp))},
-                    label={Text(label,fontSize=11.sp)},
-                    alwaysShowLabel=true,
-                    colors=NavigationBarItemDefaults.colors(
-                        selectedIconColor=Color.White,selectedTextColor=Ink,
-                        indicatorColor=Ink,unselectedIconColor=Ink,unselectedTextColor=Ink
-                    )
+        Surface(color=Background, shadowElevation=0.dp) {
+            Row(
+                modifier=Modifier.fillMaxWidth().navigationBarsPadding()
+                    .height(70.dp).padding(horizontal=8.dp,vertical=5.dp),
+                horizontalArrangement=Arrangement.SpaceEvenly,
+                verticalAlignment=Alignment.CenterVertically
+            ) {
+                val tabs=listOf(
+                    Triple("Home",Icons.Default.Home,0),
+                    Triple("Devices",Icons.Default.Computer,4),
+                    Triple("Tools",Icons.Default.Handyman,3),
+                    Triple("Settings",Icons.Default.Settings,5)
                 )
-            }
-        }
-    }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(11.dp)) {
-            when(page) {
-                0->{
-                    // UI Concept 04: exact information hierarchy, no fabricated saved devices.
-                    Row(Modifier.fillMaxWidth().padding(vertical=6.dp),
-                        verticalAlignment=Alignment.CenterVertically,
-                        horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                tabs.forEach { (label,icon,destination) ->
+                    val selected=page==destination
+                    Column(
+                        modifier=Modifier.weight(1f)
+                            .clickable {
+                                if(destination==4)openNearby("Remote")
+                                else {page=destination;detail=null}
+                            },
+                        horizontalAlignment=Alignment.CenterHorizontally,
+                        verticalArrangement=Arrangement.spacedBy(2.dp)
+                    ) {
                         Surface(
-                            modifier=Modifier.size(45.dp),color=Ink,
-                            shape=RoundedCornerShape(11.dp)
+                            color=if(selected)Ink else Color.Transparent,
+                            shape=CircleShape,
+                            modifier=Modifier.width(59.dp).height(31.dp)
                         ) {
                             Box(contentAlignment=Alignment.Center) {
-                                Text("D",fontSize=30.sp,fontWeight=FontWeight.Black,color=Color.White)
+                                Icon(
+                                    imageVector=icon,contentDescription=label,
+                                    modifier=Modifier.size(22.dp),
+                                    tint=if(selected)Color.White else Ink
+                                )
                             }
                         }
-                        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(1.dp)){
-                            Text("DOUPAD",fontSize=22.sp,fontWeight=FontWeight.ExtraBold,
-                                color=Ink,letterSpacing=(-0.5).sp)
+                        Text(label,fontSize=11.sp,
+                            fontWeight=if(selected)FontWeight.Bold else FontWeight.Medium,
+                            color=Ink,maxLines=1)
+                    }
+                }
+            }
+        }
+    }
+    }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=15.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            when(page) {
+                0->{
+                    // Pixel-proportion reference: monochrome header, status, two
+                    // real device rows and exactly four actions. No demo data.
+                    Row(
+                        Modifier.fillMaxWidth().padding(top=8.dp,bottom=3.dp),
+                        verticalAlignment=Alignment.CenterVertically,
+                        horizontalArrangement=Arrangement.spacedBy(10.dp)
+                    ) {
+                        Image(
+                            painter=painterResource(id=R.drawable.ic_launcher),
+                            contentDescription="DouPad app logo",
+                            modifier=Modifier.size(45.dp)
+                        )
+                        Column(Modifier.weight(1f),
+                            verticalArrangement=Arrangement.spacedBy(1.dp)) {
+                            Text("DOUPAD",fontSize=22.sp,
+                                fontWeight=FontWeight.Black,color=Ink,
+                                letterSpacing=(-0.65).sp,lineHeight=23.sp)
                             Text("Control your PC & TV from your phone",
-                                fontSize=10.sp,color=Ink,maxLines=1)
+                                fontSize=10.sp,color=Ink,
+                                fontWeight=FontWeight.Medium,maxLines=1)
                         }
-                        IconButton(onClick={page=5}){Icon(Icons.Default.MoreVert,"Settings",tint=Ink)}
+                        IconButton(onClick={page=5},modifier=Modifier.size(36.dp)){
+                            Icon(Icons.Default.MoreVert,"Settings",
+                                tint=Ink,modifier=Modifier.size(22.dp))
+                        }
                     }
 
                     Surface(
-                        modifier=Modifier.fillMaxWidth(),
-                        color=Pale,shape=RoundedCornerShape(14.dp)
+                        modifier=Modifier.fillMaxWidth().height(48.dp),
+                        color=Pale,shape=RoundedCornerShape(18.dp)
                     ) {
-                        Row(Modifier.padding(horizontal=13.dp,vertical=12.dp),
+                        Row(
+                            Modifier.fillMaxSize().padding(horizontal=13.dp),
                             verticalAlignment=Alignment.CenterVertically,
-                            horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                            Icon(Icons.Default.Wifi,"Wi-Fi",Modifier.size(21.dp),tint=Ink)
+                            horizontalArrangement=Arrangement.spacedBy(9.dp)
+                        ) {
+                            Surface(color=Color(0xFFE7E3E0),shape=CircleShape,
+                                modifier=Modifier.size(32.dp)) {
+                                Box(contentAlignment=Alignment.Center) {
+                                    Icon(Icons.Default.Wifi,"Wi-Fi",Modifier.size(20.dp),tint=Ink)
+                                }
+                            }
                             Surface(Modifier.size(8.dp),shape=CircleShape,color=Online){}
-                            Text(if(connected)"Connected to ${status.deviceName ?: "device"}"
-                                else "Ready to connect",fontSize=12.sp,color=Ink,
-                                fontWeight=FontWeight.SemiBold,maxLines=1)
+                            Text(
+                                if(connected)"Connected to ${status.deviceName ?: "device"}"
+                                else "Ready to connect",
+                                fontSize=12.sp,color=Ink,fontWeight=FontWeight.Bold,
+                                maxLines=1
+                            )
                         }
                     }
 
-                    Row(Modifier.fillMaxWidth(),
+                    Row(
+                        Modifier.fillMaxWidth(),
                         verticalAlignment=Alignment.CenterVertically,
-                        horizontalArrangement=Arrangement.SpaceBetween) {
-                        Text("Saved Devices",fontWeight=FontWeight.Bold,fontSize=17.sp,color=Ink)
-                        TextButton(onClick={openNearby("Remote")}) {
-                            Text("See All",fontSize=11.sp,color=Ink,fontWeight=FontWeight.SemiBold)
+                        horizontalArrangement=Arrangement.SpaceBetween
+                    ){
+                        Text("Saved Devices",fontWeight=FontWeight.ExtraBold,
+                            fontSize=17.sp,color=Ink,letterSpacing=(-0.35).sp)
+                        TextButton(onClick={openNearby("Remote")},
+                            contentPadding=PaddingValues(horizontal=4.dp,vertical=0.dp)){
+                            Text("See All",fontSize=11.sp,color=Ink,
+                                fontWeight=FontWeight.SemiBold)
                         }
                     }
-                    val saved=targets.distinctBy{it.endpoint}
+                    val saved=targets.distinctBy { it.endpoint }
                     if(saved.isEmpty()){
-                        Surface(shape=RoundedCornerShape(14.dp),color=Color.White,
-                            border=BorderStroke(1.dp,Border)){
-                            Row(Modifier.fillMaxWidth().padding(14.dp),
+                        Surface(shape=RoundedCornerShape(15.dp),color=Paper,
+                            border=BorderStroke(0.8.dp,Border),shadowElevation=1.dp){
+                            Row(Modifier.fillMaxWidth().padding(12.dp),
                                 verticalAlignment=Alignment.CenterVertically,
-                                horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                                Icon(Icons.Default.Devices,null,tint=Ink)
+                                horizontalArrangement=Arrangement.spacedBy(9.dp)){
+                                Icon(Icons.Default.Computer,null,tint=Ink,modifier=Modifier.size(24.dp))
                                 Text("No saved devices yet",modifier=Modifier.weight(1f),
                                     fontSize=12.sp,color=Muted)
                                 Button(onClick={openNearby("Remote")},
                                     colors=ButtonDefaults.buttonColors(containerColor=Ink),
                                     shape=RoundedCornerShape(9.dp),
-                                    contentPadding=PaddingValues(horizontal=12.dp,vertical=6.dp)){
-                                    Text("Add device",fontSize=11.sp)
+                                    contentPadding=PaddingValues(horizontal=10.dp)){
+                                    Text("Add device",fontSize=10.sp)
                                 }
                             }
                         }
                     }
-                    saved.take(2).forEach{target->
+                    saved.take(2).forEach { target ->
                         val live=connected && status.address==target.endpoint
                         Surface(
-                            modifier=Modifier.fillMaxWidth().height(68.dp),
-                            shape=RoundedCornerShape(13.dp),color=Color.White,
-                            border=BorderStroke(1.dp,Border),
+                            modifier=Modifier.fillMaxWidth().height(66.dp),
+                            shape=RoundedCornerShape(16.dp),
+                            color=Paper,border=BorderStroke(0.8.dp,Border),
                             shadowElevation=1.dp
                         ){
-                            Row(Modifier.fillMaxSize().padding(horizontal=10.dp,vertical=7.dp),
+                            Row(
+                                Modifier.fillMaxSize().padding(start=11.dp,end=7.dp),
                                 verticalAlignment=Alignment.CenterVertically,
-                                horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                Icon(if(target.pc)Icons.Default.Computer else Icons.Default.Tv,
-                                    null,Modifier.size(25.dp),tint=Ink)
+                                horizontalArrangement=Arrangement.spacedBy(8.dp)
+                            ){
+                                Icon(
+                                    if(target.pc)Icons.Default.Computer else Icons.Default.Tv,
+                                    contentDescription=null,modifier=Modifier.size(24.dp),tint=Ink
+                                )
                                 Column(Modifier.weight(1f),
-                                    verticalArrangement=Arrangement.spacedBy(3.dp)){
-                                    Text(target.customName ?: target.name,fontSize=12.sp,
-                                        fontWeight=FontWeight.Bold,color=Ink,maxLines=1)
+                                    verticalArrangement=Arrangement.spacedBy(2.dp)){
+                                    Text(target.customName ?: target.name,
+                                        fontSize=12.sp,fontWeight=FontWeight.Bold,color=Ink,
+                                        maxLines=1)
                                     Text(
                                         "${if(target.pc)"Windows" else "Android TV"} · ${target.endpoint.substringBefore(':')}",
-                                        fontSize=10.sp,color=Muted,maxLines=1
-                                    )
+                                        fontSize=10.sp,color=Muted,maxLines=1)
                                 }
                                 Button(
                                     onClick={open(target)},
-                                    modifier=Modifier.height(32.dp),
+                                    modifier=Modifier.height(31.dp),
                                     shape=RoundedCornerShape(9.dp),
                                     contentPadding=PaddingValues(horizontal=11.dp),
                                     colors=ButtonDefaults.buttonColors(containerColor=Ink)
                                 ){
-                                    Text(if(live)"Open" else "Connect",fontSize=10.sp,
-                                        color=Color.White)
+                                    Text(if(live)"Open" else "Connect",
+                                        fontSize=10.sp,fontWeight=FontWeight.Bold,
+                                        color=Color.White,maxLines=1)
                                 }
                                 Box {
                                     IconButton(
                                         onClick={menuTarget=target.endpoint},
-                                        modifier=Modifier.size(30.dp)
-                                    ){Icon(Icons.Default.MoreVert,"Device options",
-                                        Modifier.size(19.dp),tint=Ink)}
+                                        modifier=Modifier.size(29.dp)
+                                    ){
+                                        Icon(Icons.Default.MoreVert,"Device options",
+                                            Modifier.size(19.dp),tint=Ink)
+                                    }
                                     DropdownMenu(
                                         expanded=menuTarget==target.endpoint,
                                         onDismissRequest={menuTarget=null}
                                     ){
-                                        DropdownMenuItem(text={Text("Rename")},
+                                        DropdownMenuItem(
+                                            text={Text("Rename")},
                                             onClick={
                                                 menuTarget=null;renameTarget=target
                                                 renameText=target.customName ?: target.name
                                                 dialog="rename"
-                                            })
-                                        DropdownMenuItem(text={Text("Remove from saved")},
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text={Text("Remove from saved")},
                                             onClick={
                                                 menuTarget=null
                                                 targets=targets.filterNot{it.endpoint==target.endpoint}
                                                 saveTargets(context,targets)
-                                            })
+                                            }
+                                        )
                                     }
                                 }
                             }
                         }
                     }
 
-                    Text("Quick Actions",fontSize=17.sp,
-                        fontWeight=FontWeight.Bold,color=Ink,
-                        modifier=Modifier.padding(top=5.dp))
+                    Text(
+                        "Quick Actions",fontSize=17.sp,fontWeight=FontWeight.ExtraBold,
+                        color=Ink,letterSpacing=(-0.35).sp,
+                        modifier=Modifier.padding(top=4.dp)
+                    )
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
                         ConceptAction("Mouse Pad",Icons.Default.Mouse,Modifier.weight(1f)){
                             openNearby("Mouse Pad")
@@ -928,22 +988,22 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     }){Text(when(dialog){"rename"->"Save";"clearSaved"->"Clear";"connectingSaved"->if(status.state==ConnectionState.CONNECTING)"Connecting…" else "Retry";"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else if(connectRequested&&status.state==ConnectionState.ERROR)"Retry" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
 }
 
-@Composable private fun ConceptAction(label:String,icon:ImageVector,modifier:Modifier=Modifier,action:()->Unit){
+@Composable private fun ConceptAction(
+    label:String,icon:ImageVector,modifier:Modifier=Modifier,action:()->Unit
+){
     Surface(
-        onClick=action,
-        modifier=modifier.height(87.dp),
-        shape=RoundedCornerShape(13.dp),
-        color=Pale,
-        border=BorderStroke(1.dp,Border)
-    ){
+        onClick=action,modifier=modifier.height(83.dp),
+        shape=RoundedCornerShape(14.dp),
+        color=Pale,border=BorderStroke(0.8.dp,Border)
+    ) {
         Column(
-            modifier=Modifier.fillMaxSize().padding(9.dp),
+            modifier=Modifier.fillMaxSize().padding(8.dp),
             horizontalAlignment=Alignment.CenterHorizontally,
             verticalArrangement=Arrangement.Center
-        ){
+        ) {
             Icon(icon,contentDescription=null,modifier=Modifier.size(25.dp),tint=Ink)
-            Spacer(Modifier.height(9.dp))
-            Text(label,fontSize=12.sp,fontWeight=FontWeight.SemiBold,
+            Spacer(Modifier.height(8.dp))
+            Text(label,fontSize=12.sp,fontWeight=FontWeight.Bold,
                 color=Ink,maxLines=1)
         }
     }
