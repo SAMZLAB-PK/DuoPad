@@ -4,8 +4,8 @@ video=(root/"app/src/main/java/com/unipoint/presentation/ui/DoupadMirrorActivity
 screen=(root/"app/src/main/java/com/unipoint/presentation/ui/screens/android/DeviceInfoProScreen.kt").read_text()
 ui=(root/"app/src/main/java/com/unipoint/presentation/ui/DoupadShell.kt").read_text()
 build=(root/"app/build.gradle.kts").read_text()
-assert 'VideoProfile(960, 24, 2_000_000, false)' in video
-assert 'VideoProfile(720, 15, 1_200_000, true)' in video
+assert 'VideoProfile(960, 24, 2_000_000, true, true)' in video
+assert 'VideoProfile(720, 15, 1_200_000, true, false)' in video
 assert 'KEY_LOW_LATENCY' in video
 assert 'AtomicBoolean(false)' in video
 assert 'firstFrame.compareAndSet(false, true)' in video
@@ -18,6 +18,6 @@ assert 'MirrorDiagnosticsScreen' in ui
 assert 'Detail("ram"' in screen
 assert 'Detail("ip"' in screen
 assert '"infoFull"->{DeviceInfoProScreen' in ui
-assert 'versionCode = 12' in build
-assert 'versionName = "0.12.0-reference-perfect-beta"' in build
+assert 'versionCode = 13' in build
+assert 'versionName = "0.13.0-connected-tools-audio-beta"' in build
 print("DOUPAD_PRO_V07_VIDEO_DIAGNOSTICS_PASS")
