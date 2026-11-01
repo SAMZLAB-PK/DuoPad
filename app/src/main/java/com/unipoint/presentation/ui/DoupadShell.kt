@@ -700,31 +700,57 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     Hint("Availability depends on TV firmware. DRM-protected video may appear blank.")
                 }
                 3->{
-                    Title("Tools","Get more from your devices.")
-                    var search by rememberSaveable {mutableStateOf("")}
-                    OutlinedTextField(value=search,onValueChange={search=it},placeholder={Text("Search tools…",fontSize=14.sp)},leadingIcon={Icon(Icons.Default.Search,null)},modifier=Modifier.fillMaxWidth(),singleLine=true,shape=RoundedCornerShape(14.dp))
-                    Text("Main tools",fontSize=17.sp,fontWeight=FontWeight.Bold)
-                    val tools=listOf(Triple("Apps","Manage installed apps",Icons.Default.GridView),Triple("Files","Browse device files",Icons.Default.FolderOpen),Triple("Install APK","Install APK files",Icons.Default.InstallMobile),Triple("Transfers","Send and receive files",Icons.Default.SwapHoriz),Triple("Shell","Run commands",Icons.Default.Terminal),Triple("Device info","View device details",Icons.Default.Info))
-                    tools.filter { it.first.contains(search,true) || it.second.contains(search,true) }.chunked(2).forEach { row ->
-                        Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                            row.forEach { (label,sub,ic) ->
-                                ToolTile(label,sub,ic,Modifier.weight(1f)) {
-                                    if(requireTv()) {
-                                        when(label) {
-                                            "Apps","Install APK" -> detail="apps"
-                                            "Files","Transfers" -> detail="files"
-                                            "Shell" -> detail="shellFull"
-                                            "Device info" -> detail="infoFull"
-                                            else -> detail="infoFull"
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                        IconButton(onClick={page=4}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Devices",tint=Ink)}
+                        Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){
+                            Text(status.deviceName ?: "Connected device",
+                                fontWeight=FontWeight.Bold,fontSize=18.sp,color=Ink,maxLines=1)
+                            Text(if(connected)"CONNECTED" else "DISCONNECTED",fontSize=11.sp,
+                                fontWeight=FontWeight.SemiBold,color=Muted)
+                        }
+                        IconButton(onClick={dialog="settings"}){Icon(Icons.Default.MoreVert,"Device options")}
+                    }
+                    val mainTools=listOf(
+                        Triple("Install",Icons.Default.InstallMobile,"apps"),
+                        Triple("Upload to Downloads",Icons.Default.UploadFile,"files"),
+                        Triple("File manager",Icons.Default.FolderOpen,"files"),
+                        Triple("Channels",Icons.Default.LiveTv,"apps"),
+                        Triple("Screen mirror",Icons.Default.CastConnected,"mirror"),
+                        Triple("Gamepad",Icons.Default.SportsEsports,"gamepadFull"),
+                        Triple("Screenshot",Icons.Default.PhotoCamera,"preview"),
+                        Triple("Screen record",Icons.Default.Videocam,"record")
+                    )
+                    mainTools.chunked(2).forEach { row ->
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                            row.forEach { (label,ic,action) ->
+                                ToolTile(label,"",ic,Modifier.weight(1f)){
+                                    if(requireTv()){
+                                        when(action){
+                                            "mirror"->{page=2;detail=null}
+                                            "record"->dialog="record"
+                                            else->detail=action
                                         }
                                     }
                                 }
                             }
-                            if(row.size==1) Spacer(Modifier.weight(1f))
                         }
                     }
-                    Text("More tools",fontSize=17.sp,fontWeight=FontWeight.Bold)
-                    Surface(shape=RoundedCornerShape(15.dp),border=BorderStroke(1.dp,Border),color=Color.White){Column{ToolRow("Gamepad","Use your phone as a full-screen gamepad",Icons.Default.SportsEsports){if(requireTv())detail="gamepadFull"};HorizontalDivider(color=Border);ToolRow("Button mapping","Customize and save remote keycodes",Icons.Default.Tune){if(requireTv())detail="mappingFull"};HorizontalDivider(color=Border);ToolRow("Power options","Sleep, restart or power off",Icons.Default.PowerSettingsNew){if(requireTv())dialog="power"}}}
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        ToolTile("Clear cache","",Icons.Default.DeleteSweep,Modifier.weight(1f)){
+                            if(requireTv())dialog="clearCache"
+                        }
+                        ToolTile("Screensaver","",Icons.Default.AutoAwesome,Modifier.weight(1f)){
+                            if(requireTv())showCommand("Screensaver","am start -a android.intent.action.DREAMING_STARTED")
+                        }
+                        ToolTile("Power Menu","",Icons.Default.PowerSettingsNew,Modifier.weight(1f)){
+                            if(requireTv())dialog="power"
+                        }
+                    }
+                    OutlinedButton(onClick={page=1},modifier=Modifier.fillMaxWidth()){
+                        Icon(Icons.Default.SettingsRemote,null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Remote control")
+                    }
                 }
                 5->{
                     Title("Settings","Control your connected devices and preferences.")
