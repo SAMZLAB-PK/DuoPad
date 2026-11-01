@@ -22,14 +22,14 @@ for name in ('Mouse Pad','Air Mouse','Remote','Mirror'):
     assert f'ConceptAction("{name}"' in shell
 assert 'modifier=modifier.height(83.dp)' in shell
 assert 'navigationBarsPadding()' in shell
-assert 'Modifier.width(59.dp).height(31.dp)' in shell
-assert 'Triple("Home",Icons.Default.Home,0)' in shell
-assert 'Triple("Devices",Icons.Default.Computer,4)' in shell
-assert 'Triple("Tools",Icons.Default.Handyman,3)' in shell
-assert 'Triple("Settings",Icons.Default.Settings,5)' in shell
+assert 'Modifier.width(56.dp).height(29.dp)' in shell
+assert 'Triple("Tools",Icons.Default.Handyman,"tools")' in shell
+assert 'Triple("Apps",Icons.Default.GridView,"apps")' in shell
+assert 'Triple("Shell",Icons.Default.Terminal,"shellFull")' in shell
+assert 'Triple("Info",Icons.Default.Info,"infoFull")' in shell
 assert 'FontFamily.SansSerif' in typography
 assert 'FontWeight.Black' in typography
 assert '#171717' in logo and '#FFFFFF' in logo
-assert 'versionCode = 12' in build
-assert '0.12.0-reference-perfect-beta' in build
+assert 'versionCode = 13' in build
+assert '0.13.0-connected-tools-audio-beta' in build
 print("DOUPAD_PRO_V12_REFERENCE_UI_SOURCE_PASS")
