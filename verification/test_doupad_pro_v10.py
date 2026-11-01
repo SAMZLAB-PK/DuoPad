@@ -14,6 +14,6 @@ assert 'MediaCodec.BUFFER_FLAG_CODEC_CONFIG' in video
 assert 'MediaCodec.BUFFER_FLAG_KEY_FRAME' in video
 assert 'if (generation.get() == ticket && !firstFrame.get())' in video
 assert 'No decoded frame: packets=' in video
-assert 'versionCode = 15' in build
-assert 'versionName = "0.15.0-tvbox-encoder-beta"' in build
+assert 'versionCode = 16' in build
+assert 'versionName = "0.16.0-aceconn-encoder-switch-beta"' in build
 print("DOUPAD_PRO_V10_FRAME_WATCHDOG_CHECKS_PASS")
