@@ -12,7 +12,7 @@ assert 'AdbCommand.PointerClick' in mouse, 'mouse clicks must use realtime point
 assert 'AdbCommand.PointerScroll' in mouse, 'scroll must use realtime pointer command'
 assert 'input mouse motionevent MOVE' not in mouse, 'mouse screen must not shell each move'
 
-assert 'VideoProfile(960, 24, 2_000_000, false)' in mirror and 'VideoProfile(720, 15, 1_200_000, true)' in mirror, 'mirror must support video-only primary and control-enabled fallback'
+assert 'VideoProfile(960, 24, 2_000_000, true, true)' in mirror and 'VideoProfile(720, 15, 1_200_000, true, false)' in mirror, 'mirror must support video-only primary and control-enabled fallback'
 assert 'max_fps=${profile.fps}' in mirror, 'mirror must configure adaptive frame rate'
 assert 'video_bit_rate=${profile.bitRate}' in mirror, 'mirror must configure adaptive target bitrate'
 assert 'current.control=adb.open("localabstract:scrcpy_$id")' in mirror.replace(' ', ''), 'mirror must open control socket where supported'
