@@ -18,6 +18,6 @@ assert 'MirrorDiagnosticsScreen' in ui
 assert 'Detail("ram"' in screen
 assert 'Detail("ip"' in screen
 assert '"infoFull"->{DeviceInfoProScreen' in ui
-assert 'versionCode = 13' in build
-assert 'versionName = "0.13.0-connected-tools-audio-beta"' in build
+assert 'versionCode = 14' in build
+assert 'versionName = "0.14.0-mirror-recovery-beta"' in build
 print("DOUPAD_PRO_V07_VIDEO_DIAGNOSTICS_PASS")
