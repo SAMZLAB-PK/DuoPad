@@ -197,11 +197,11 @@ fun AndroidGamepadScreen(
     viewModel: MainViewModel = hiltViewModel()
 ) {
     fun key(code: Int) = viewModel.executeAdb(AdbCommand.InputKey(code))
-    val ink = Color(0xFF102033)
-    val teal = Color(0xFF008C91)
+    val ink = Color(0xFF171717)
+    val teal = Color(0xFF181818)
 
     Scaffold(
-        containerColor = Color(0xFFFBFCFD),
+        containerColor = Color(0xFFFCFAF8),
         topBar = {
             TopAppBar(
                 title = { Column { Text("Gamepad", fontWeight = FontWeight.Bold, color = ink); Text("Android TV / Box", fontSize = 11.sp) } },
@@ -231,7 +231,7 @@ fun AndroidGamepadScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(Modifier.size(wheel),contentAlignment=Alignment.Center) {
-                        Surface(Modifier.fillMaxSize(),shape=CircleShape,color=Color(0xFFE9F0F5)) { }
+                        Surface(Modifier.fillMaxSize(),shape=CircleShape,color=Color(0xFFF2EFEB)) { }
                         IconButton(onClick={key(19)},modifier=Modifier.align(Alignment.TopCenter).size(arrowKey)){
                             Icon(Icons.Default.KeyboardArrowUp,"Up",Modifier.size(32.dp),tint=ink)
                         }
@@ -259,7 +259,7 @@ fun AndroidGamepadScreen(
                             FilledIconButton(
                                 onClick={key(code)},modifier=Modifier.align(position).size(faceKey),
                                 colors=IconButtonDefaults.filledIconButtonColors(
-                                    containerColor=when(name){"A"->Color(0xFFDCF5EB);"B"->Color(0xFFFFE6E7);"X"->Color(0xFFDEEDF9);else->Color(0xFFF7EACD)},
+                                    containerColor=when(name){"A"->Color(0xFFF3F0EC);"B"->Color(0xFFF3F0EC);"X"->Color(0xFFF3F0EC);else->Color(0xFFF3F0EC)},
                                     contentColor=ink
                                 )
                             ) { Text(name,fontWeight=FontWeight.Bold,fontSize=15.sp) }
@@ -274,7 +274,7 @@ fun AndroidGamepadScreen(
                 }
                 Text(
                     "Works with Android keycodes. Some games require a paired HID gamepad.",
-                    fontSize=11.sp,color=Color(0xFF667587),modifier=Modifier.fillMaxWidth()
+                    fontSize=11.sp,color=Color(0xFF77736F),modifier=Modifier.fillMaxWidth()
                 )
             }
         }
