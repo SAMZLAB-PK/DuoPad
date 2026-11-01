@@ -3,6 +3,7 @@ package com.unipoint.presentation.ui.screens.android
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -196,86 +197,149 @@ fun AndroidGamepadScreen(
     onBack: () -> Unit,
     viewModel: MainViewModel = hiltViewModel()
 ) {
-    fun key(code: Int) = viewModel.executeAdb(AdbCommand.InputKey(code))
-    val ink = Color(0xFF171717)
-    val teal = Color(0xFF181818)
+    val ink = Color(0xFF121212)
+    val buttonColor = Color(0xFF393939)
+    fun key(code:Int) = viewModel.executeAdb(AdbCommand.InputKey(code))
 
+    @Composable fun PadButton(text:String,code:Int,modifier:Modifier=Modifier) {
+        Surface(
+            onClick={key(code)},modifier=modifier,
+            shape=RoundedCornerShape(14.dp),color=buttonColor
+        ) { Box(contentAlignment=Alignment.Center) {
+            Text(text,color=Color.White,fontWeight=FontWeight.Bold,fontSize=13.sp)
+        } }
+    }
+    @Composable fun Stick(label:String,code:Int,size: androidx.compose.ui.unit.Dp) {
+        var dx by remember { mutableFloatStateOf(0f) }
+        var dy by remember { mutableFloatStateOf(0f) }
+        Box(
+            Modifier.size(size).pointerInput(label) {
+                detectDragGestures(
+                    onDragStart={dx=0f;dy=0f},
+                    onDrag={change,amount-> change.consume(); dx+=amount.x;dy+=amount.y},
+                    onDragEnd={
+                        val horizontal=kotlin.math.abs(dx)>kotlin.math.abs(dy)
+                        key(if(horizontal){if(dx>0)22 else 21}else{if(dy>0)20 else 19})
+                        dx=0f;dy=0f
+                    },
+                    onDragCancel={dx=0f;dy=0f}
+                )
+            },contentAlignment=Alignment.Center
+        ){
+            Surface(Modifier.fillMaxSize(),shape=CircleShape,color=buttonColor,
+                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF858585))){}
+            Surface(onClick={key(code)},modifier=Modifier.size(size*0.52f),
+                shape=CircleShape,color=Color.White){
+                Box(contentAlignment=Alignment.Center){
+                    Text(label,color=ink,fontSize=28.sp,fontWeight=FontWeight.Bold)
+                }
+            }
+        }
+    }
+    @Composable fun Directions(size: androidx.compose.ui.unit.Dp) {
+        Box(Modifier.size(size),contentAlignment=Alignment.Center){
+            Surface(Modifier.fillMaxSize(),shape=CircleShape,color=buttonColor){}
+            val side=size*0.30f
+            listOf(
+                Triple("▲",19,Alignment.TopCenter),
+                Triple("▼",20,Alignment.BottomCenter),
+                Triple("◀",21,Alignment.CenterStart),
+                Triple("▶",22,Alignment.CenterEnd)
+            ).forEach { (label,code,pos) ->
+                Surface(onClick={key(code)},modifier=Modifier.align(pos).size(side),
+                    shape=RoundedCornerShape(11.dp),color=Color(0xFF6A6A6A)){
+                    Box(contentAlignment=Alignment.Center){
+                        Text(label,fontSize=14.sp,color=Color.White)
+                    }
+                }
+            }
+        }
+    }
+    @Composable fun Face(size: androidx.compose.ui.unit.Dp) {
+        Box(Modifier.size(size),contentAlignment=Alignment.Center){
+            val d=size*0.34f
+            listOf(
+                Triple("Y",100,Alignment.TopCenter),
+                Triple("A",96,Alignment.BottomCenter),
+                Triple("X",99,Alignment.CenterStart),
+                Triple("B",97,Alignment.CenterEnd)
+            ).forEach{(label,code,pos)->
+                Surface(onClick={key(code)},modifier=Modifier.align(pos).size(d),
+                    shape=CircleShape,color=buttonColor){
+                    Box(contentAlignment=Alignment.Center){
+                        Text(label,color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
     Scaffold(
-        containerColor = Color(0xFFFCFAF8),
-        topBar = {
+        containerColor=Color(0xFF141414),
+        topBar={
             TopAppBar(
-                title = { Column { Text("Gamepad", fontWeight = FontWeight.Bold, color = ink); Text("Android TV / Box", fontSize = 11.sp) } },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                title={Text("Gamepad",fontWeight=FontWeight.Bold,color=Color.White)},
+                navigationIcon={IconButton(onClick=onBack){
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back",tint=Color.White)
+                }},
+                colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFF141414))
             )
         }
-    ) { padding ->
-        BoxWithConstraints(Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp, vertical = 8.dp)) {
-            val portrait = maxHeight > maxWidth
-            val wheel = minOf(maxWidth * (if (portrait) 0.44f else 0.34f), maxHeight * 0.56f, 206.dp)
-            val faceKey = minOf(wheel * 0.31f, 52.dp)
-            val arrowKey = minOf(wheel * 0.32f, 56.dp)
-            Column(Modifier.fillMaxSize(),verticalArrangement = Arrangement.SpaceBetween) {
-                Row(
-                    Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(onClick = { key(102) },contentPadding=PaddingValues(horizontal=10.dp)) { Text("L1",fontSize=12.sp) }
-                    TextButton(onClick = { key(109) },contentPadding=PaddingValues(horizontal=3.dp)) { Text("SELECT",fontSize=11.sp) }
-                    TextButton(onClick = { key(108) },contentPadding=PaddingValues(horizontal=3.dp)) { Text("START",fontSize=11.sp) }
-                    OutlinedButton(onClick = { key(103) },contentPadding=PaddingValues(horizontal=10.dp)) { Text("R1",fontSize=12.sp) }
+    ){pad->
+        BoxWithConstraints(Modifier.fillMaxSize().padding(pad).padding(10.dp)){
+            val portrait=maxHeight>maxWidth
+            val size=minOf(maxWidth*(if(portrait)0.42f else 0.24f),
+                maxHeight*(if(portrait)0.23f else 0.40f),210.dp)
+            Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.SpaceBetween){
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+                    listOf("LB" to 102,"LT" to 104,"RT" to 105,"RB" to 103).forEach{(label,code)->
+                        PadButton(label,code,Modifier.width(62.dp).height(37.dp))
+                    }
                 }
-
-                Row(
-                    Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(Modifier.size(wheel),contentAlignment=Alignment.Center) {
-                        Surface(Modifier.fillMaxSize(),shape=CircleShape,color=Color(0xFFF2EFEB)) { }
-                        IconButton(onClick={key(19)},modifier=Modifier.align(Alignment.TopCenter).size(arrowKey)){
-                            Icon(Icons.Default.KeyboardArrowUp,"Up",Modifier.size(32.dp),tint=ink)
-                        }
-                        IconButton(onClick={key(20)},modifier=Modifier.align(Alignment.BottomCenter).size(arrowKey)){
-                            Icon(Icons.Default.KeyboardArrowDown,"Down",Modifier.size(32.dp),tint=ink)
-                        }
-                        IconButton(onClick={key(21)},modifier=Modifier.align(Alignment.CenterStart).size(arrowKey)){
-                            Icon(Icons.Default.KeyboardArrowLeft,"Left",Modifier.size(32.dp),tint=ink)
-                        }
-                        IconButton(onClick={key(22)},modifier=Modifier.align(Alignment.CenterEnd).size(arrowKey)){
-                            Icon(Icons.Default.KeyboardArrowRight,"Right",Modifier.size(32.dp),tint=ink)
-                        }
-                        FilledIconButton(onClick={key(23)},modifier=Modifier.size(wheel*0.36f),
-                            colors=IconButtonDefaults.filledIconButtonColors(containerColor=teal)){
-                            Text("OK",color=Color.White,fontWeight=FontWeight.Bold,fontSize=15.sp)
+                if(portrait){
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,
+                        verticalAlignment=Alignment.CenterVertically){
+                        Stick("L",106,size)
+                        Face(size)
+                    }
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){
+                        listOf("SELECT" to 109,"HOME" to 3,"START" to 108).forEach{(label,code)->
+                            PadButton(label,code,Modifier.width(89.dp).height(39.dp))
                         }
                     }
-                    Box(Modifier.size(wheel),contentAlignment=Alignment.Center) {
-                        listOf(
-                            Triple("Y",100,Alignment.TopCenter),
-                            Triple("A",96,Alignment.BottomCenter),
-                            Triple("X",99,Alignment.CenterStart),
-                            Triple("B",97,Alignment.CenterEnd)
-                        ).forEach { (name,code,position) ->
-                            FilledIconButton(
-                                onClick={key(code)},modifier=Modifier.align(position).size(faceKey),
-                                colors=IconButtonDefaults.filledIconButtonColors(
-                                    containerColor=when(name){"A"->Color(0xFFF3F0EC);"B"->Color(0xFFF3F0EC);"X"->Color(0xFFF3F0EC);else->Color(0xFFF3F0EC)},
-                                    contentColor=ink
-                                )
-                            ) { Text(name,fontWeight=FontWeight.Bold,fontSize=15.sp) }
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,
+                        verticalAlignment=Alignment.CenterVertically){
+                        Directions(size)
+                        Stick("R",107,size)
+                    }
+                } else {
+                    Row(Modifier.weight(1f).fillMaxWidth(),
+                        horizontalArrangement=Arrangement.SpaceEvenly,
+                        verticalAlignment=Alignment.CenterVertically){
+                        Column(verticalArrangement=Arrangement.spacedBy(8.dp),
+                            horizontalAlignment=Alignment.CenterHorizontally){
+                            Stick("L",106,size)
+                            Directions(size*0.78f)
+                        }
+                        Column(horizontalAlignment=Alignment.CenterHorizontally,
+                            verticalArrangement=Arrangement.spacedBy(9.dp)){
+                            listOf("SELECT" to 109,"HOME" to 3,"START" to 108).forEach{(label,code)->
+                                PadButton(label,code,Modifier.width(85.dp).height(40.dp))
+                            }
+                        }
+                        Column(verticalArrangement=Arrangement.spacedBy(8.dp),
+                            horizontalAlignment=Alignment.CenterHorizontally){
+                            Face(size)
+                            Stick("R",107,size*0.78f)
                         }
                     }
                 }
-
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly) {
-                    OutlinedButton(onClick={key(4)}) { Icon(Icons.AutoMirrored.Filled.ArrowBack,null);Spacer(Modifier.width(4.dp));Text("Back") }
-                    OutlinedButton(onClick={key(3)}) { Icon(Icons.Default.Home,null);Spacer(Modifier.width(4.dp));Text("Home") }
-                    OutlinedButton(onClick={key(82)}) { Icon(Icons.Default.Menu,null);Spacer(Modifier.width(4.dp));Text("Menu") }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly){
+                    PadButton("L3",106,Modifier.width(70.dp).height(36.dp))
+                    PadButton("BACK",4,Modifier.width(70.dp).height(36.dp))
+                    PadButton("R3",107,Modifier.width(70.dp).height(36.dp))
                 }
-                Text(
-                    "Works with Android keycodes. Some games require a paired HID gamepad.",
-                    fontSize=11.sp,color=Color(0xFF77736F),modifier=Modifier.fillMaxWidth()
-                )
+                Text("Directional stick emulation uses Android keycodes; true analog HID requires gamepad support.",
+                    fontSize=10.sp,color=Color.LightGray,maxLines=2)
             }
         }
     }
