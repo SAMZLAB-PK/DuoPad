@@ -15,8 +15,8 @@ android {
         applicationId = "com.samz.samzlink"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.13.0-connected-tools-audio-beta"
+        versionCode = 14
+        versionName = "0.14.0-mirror-recovery-beta"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
