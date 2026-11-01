@@ -19,5 +19,5 @@ assert 'Semaphore(2)' in apps and 'queue.withPermit' in apps
 assert 'VideoProfile(960, 24, 2_000_000, true, true)' in video
 assert 'VideoProfile(720, 15, 1_200_000, true, false)' in video
 assert 'video_codec=h264' in video
-assert 'versionCode = 15' in build and '0.15.0-tvbox-encoder-beta' in build
+assert 'versionCode = 16' in build and '0.16.0-aceconn-encoder-switch-beta' in build
 print("DOUPAD_PRO_V06_SOURCE_CHECKS_PASS")
