@@ -50,12 +50,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-private val Teal = Color(0xFF008C91)
-private val Ink = Color(0xFF102033)
-private val Muted = Color(0xFF667587)
-private val Border = Color(0xFFE0E6ED)
-private val Pale = Color(0xFFF2F5F8)
-private val Background = Color(0xFFFBFCFD)
+private val Teal = Color(0xFF181818) // Concept 04 accent: near-black ink
+private val Ink = Color(0xFF171717)
+private val Muted = Color(0xFF77736F)
+private val Border = Color(0xFFE6E1DC)
+private val Pale = Color(0xFFF2EFEB)
+private val Background = Color(0xFFFCFAF8)
+private val Online = Color(0xFF19B342)
 private data class Target(val name:String,val endpoint:String,val pc:Boolean,val customName:String?=null)
 private fun readTargets(context:Context):List<Target> = runCatching {
     val a=JSONArray(context.getSharedPreferences("doupad",0).getString("targets","[]"))
@@ -90,6 +91,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     var connectRequested by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Target?>(null) }
     var renameText by remember { mutableStateOf("") }
+    var menuTarget by remember { mutableStateOf<String?>(null) }
     var airMouseSelected by rememberSaveable { mutableStateOf(false) }
     var pendingQuickAction by rememberSaveable { mutableStateOf("Remote") }
     var targets by remember { mutableStateOf(readTargets(context)) }
@@ -147,15 +149,25 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         val isTv = state.mode == AppMode.ANDROID
         when(pendingQuickAction) {
             "Mirror" -> {
-                if(isTv) page=2 else { page=1;message("Windows screen mirroring is not available in this test build.") }
+                if(isTv) page=2 else {page=1;message("PC mirroring needs a compatible host.")}
+            }
+            "Mouse Pad", "Air Mouse" -> {
+                page=1
+                if(isTv) {
+                    airMouseSelected=pendingQuickAction=="Air Mouse"
+                    remoteMode=if(airMouseSelected)2 else 1
+                    detail="mouse"
+                } else if(pendingQuickAction=="Mouse Pad") {
+                    remoteMode=1
+                } else message("Air Mouse is available for supported Android TV devices.")
             }
             "Send files" -> {
-                if(isTv) { page=1;detail="files" }
-                else { page=1;message("PC file transfer requires an updated Windows companion.") }
+                if(isTv) {page=3;detail="files"}
+                else {page=3;message("PC file transfer requires a supported host.")}
             }
             "Install APK" -> {
-                if(isTv) { page=1;detail="apps" }
-                else { page=1;message("APK installation is available for Android devices only.") }
+                if(isTv) {page=3;detail="apps"}
+                else {page=3;message("APK installation is for Android devices only.")}
             }
             else -> page=1
         }
@@ -232,69 +244,176 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         "pcKeyboard"->{KeyboardScreen(onBack=back);return}
     }
     Scaffold(containerColor=Background,snackbarHost={SnackbarHost(snack)},bottomBar={
-        NavigationBar(containerColor=Color.White,tonalElevation=0.dp,modifier=Modifier.border(BorderStroke(0.5.dp,Border))) {
-            listOf("Home" to Icons.Default.Home,"Remote" to Icons.Default.SettingsRemote,"Mirror" to Icons.Default.ScreenShare,"Tools" to Icons.Default.GridView).forEachIndexed { index,(label,icon)->
-                NavigationBarItem(selected=page==index,onClick={page=index},icon={Icon(icon,label,Modifier.size(23.dp))},label={Text(label,fontSize=11.sp)},colors=NavigationBarItemDefaults.colors(selectedIconColor=Teal,selectedTextColor=Teal,indicatorColor=Color(0xFFE9F6F5),unselectedIconColor=Muted,unselectedTextColor=Muted))
+        NavigationBar(
+            containerColor=Color.White,tonalElevation=0.dp,
+            modifier=Modifier.border(BorderStroke(0.5.dp,Border))
+        ) {
+            val tabs=listOf(
+                Triple("Home",Icons.Default.Home,0),
+                Triple("Devices",Icons.Default.Devices,4),
+                Triple("Tools",Icons.Default.Build,3),
+                Triple("Settings",Icons.Default.Settings,5)
+            )
+            tabs.forEach { (label,icon,destination) ->
+                NavigationBarItem(
+                    selected=page==destination,
+                    onClick={if(destination==4)openNearby("Remote") else {page=destination;detail=null}},
+                    icon={Icon(icon,label,Modifier.size(21.dp))},
+                    label={Text(label,fontSize=11.sp)},
+                    alwaysShowLabel=true,
+                    colors=NavigationBarItemDefaults.colors(
+                        selectedIconColor=Color.White,selectedTextColor=Ink,
+                        indicatorColor=Ink,unselectedIconColor=Ink,unselectedTextColor=Ink
+                    )
+                )
             }
         }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=12.dp),verticalArrangement=Arrangement.spacedBy(11.dp)) {
             when(page) {
                 0->{
-                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("DouPad Pro",fontSize=26.sp,fontWeight=FontWeight.ExtraBold,color=Ink);IconButton(onClick={dialog="settings"}){Icon(Icons.Default.Settings,"Settings")}}
-                    Title("Your devices","Control all your screens from one place.")
-                    Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                        listOf("All","TV","PC","Saved").forEach { label ->
-                            FilterChip(selected=filter==label,onClick={filter=label},
-                                label={Text(label,fontSize=11.sp)},shape=CircleShape,
-                                colors=FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor=Teal,selectedLabelColor=Color.White))
+                    // UI Concept 04: exact information hierarchy, no fabricated saved devices.
+                    Row(Modifier.fillMaxWidth().padding(vertical=6.dp),
+                        verticalAlignment=Alignment.CenterVertically,
+                        horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Surface(
+                            modifier=Modifier.size(45.dp),color=Ink,
+                            shape=RoundedCornerShape(11.dp)
+                        ) {
+                            Box(contentAlignment=Alignment.Center) {
+                                Text("D",fontSize=30.sp,fontWeight=FontWeight.Black,color=Color.White)
+                            }
+                        }
+                        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(1.dp)){
+                            Text("DOUPAD",fontSize=22.sp,fontWeight=FontWeight.ExtraBold,
+                                color=Ink,letterSpacing=(-0.5).sp)
+                            Text("Control your PC & TV from your phone",
+                                fontSize=10.sp,color=Ink,maxLines=1)
+                        }
+                        IconButton(onClick={page=5}){Icon(Icons.Default.MoreVert,"Settings",tint=Ink)}
+                    }
+
+                    Surface(
+                        modifier=Modifier.fillMaxWidth(),
+                        color=Pale,shape=RoundedCornerShape(14.dp)
+                    ) {
+                        Row(Modifier.padding(horizontal=13.dp,vertical=12.dp),
+                            verticalAlignment=Alignment.CenterVertically,
+                            horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.Default.Wifi,"Wi-Fi",Modifier.size(21.dp),tint=Ink)
+                            Surface(Modifier.size(8.dp),shape=CircleShape,color=Online){}
+                            Text(if(connected)"Connected to ${status.deviceName ?: "device"}"
+                                else "Ready to connect",fontSize=12.sp,color=Ink,
+                                fontWeight=FontWeight.SemiBold,maxLines=1)
                         }
                     }
-                    val visible=targets.filter {
-                        when(filter) {
-                            "TV" -> !it.pc
-                            "PC" -> it.pc
-                            "Saved" -> true
-                            else -> true
+
+                    Row(Modifier.fillMaxWidth(),
+                        verticalAlignment=Alignment.CenterVertically,
+                        horizontalArrangement=Arrangement.SpaceBetween) {
+                        Text("Saved Devices",fontWeight=FontWeight.Bold,fontSize=17.sp,color=Ink)
+                        TextButton(onClick={openNearby("Remote")}) {
+                            Text("See All",fontSize=11.sp,color=Ink,fontWeight=FontWeight.SemiBold)
                         }
-                    }.distinctBy { it.endpoint }
-                    if(visible.isEmpty()) Surface(shape=RoundedCornerShape(18.dp),border=BorderStroke(1.dp,Border),color=Color.White){Column(Modifier.fillMaxWidth().padding(24.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)){Icon(Icons.Default.Devices,null,Modifier.size(48.dp),tint=Teal);Text("Your first connection starts here",fontWeight=FontWeight.SemiBold);Text("Add a TV or PC over Wi-Fi or Bluetooth.\nYour saved devices will appear here.",fontSize=13.sp,color=Muted);Button(onClick={dialog="connect"},colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Add your device")}}}
-                    visible.forEach { target ->
-                        val live=connected && status.address==target.endpoint
-                        Surface(onClick={open(target)},modifier=Modifier.fillMaxWidth().height(76.dp),
-                            shape=RoundedCornerShape(15.dp),color=if(live)Color(0xFFEFFAFA) else Color.White,
-                            border=BorderStroke(1.dp,if(live)Teal else Border)){
-                            Row(Modifier.fillMaxSize().padding(horizontal=12.dp,vertical=7.dp),
+                    }
+                    val saved=targets.distinctBy{it.endpoint}
+                    if(saved.isEmpty()){
+                        Surface(shape=RoundedCornerShape(14.dp),color=Color.White,
+                            border=BorderStroke(1.dp,Border)){
+                            Row(Modifier.fillMaxWidth().padding(14.dp),
                                 verticalAlignment=Alignment.CenterVertically,
-                                horizontalArrangement=Arrangement.spacedBy(9.dp)){
-                                Surface(shape=RoundedCornerShape(10.dp),color=Pale){
-                                    Icon(if(target.pc)Icons.Default.Computer else Icons.Default.Tv,null,
-                                        Modifier.padding(8.dp).size(36.dp),tint=Teal)
+                                horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                                Icon(Icons.Default.Devices,null,tint=Ink)
+                                Text("No saved devices yet",modifier=Modifier.weight(1f),
+                                    fontSize=12.sp,color=Muted)
+                                Button(onClick={openNearby("Remote")},
+                                    colors=ButtonDefaults.buttonColors(containerColor=Ink),
+                                    shape=RoundedCornerShape(9.dp),
+                                    contentPadding=PaddingValues(horizontal=12.dp,vertical=6.dp)){
+                                    Text("Add device",fontSize=11.sp)
                                 }
-                                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)){
-                                    Text(target.customName ?: target.name,fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)
-                                    Text(target.endpoint,fontSize=11.sp,color=Muted,maxLines=1)
-                                    Text(if(live)"● Connected" else "● Saved",fontSize=10.sp,color=if(live)Teal else Muted)
-                                }
-                                IconButton(onClick={
-                                    renameTarget=target;renameText=target.customName ?: target.name;dialog="rename"
-                                },modifier=Modifier.size(36.dp)){
-                                    Icon(Icons.Default.Edit,"Rename device",Modifier.size(19.dp),tint=Muted)
-                                }
-                                Icon(Icons.Default.ChevronRight,null,Modifier.size(19.dp),tint=Muted)
                             }
                         }
                     }
-                    OutlinedButton(onClick={dialog="connect"},modifier=Modifier.fillMaxWidth().height(76.dp),shape=RoundedCornerShape(15.dp),border=BorderStroke(1.dp,Border)){Icon(Icons.Default.AddCircleOutline,null,tint=Teal);Spacer(Modifier.width(12.dp));Column{Text("Add device",color=Ink,fontWeight=FontWeight.SemiBold);Text("Connect a new TV or PC",fontSize=11.sp,color=Muted)}}
-                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Quick actions",fontWeight=FontWeight.Bold,fontSize=17.sp);IconButton(onClick={openNearby("Remote")}){Icon(Icons.Default.Radar,"Find devices",tint=Teal)}}
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                        Quick("Remote",Icons.Default.SettingsRemote,Modifier.weight(1f)){openNearby("Remote")}
-                        Quick("Mirror",Icons.Default.ScreenShare,Modifier.weight(1f)){openNearby("Mirror")}
-                        Quick("Send files",Icons.AutoMirrored.Filled.Send,Modifier.weight(1f)){openNearby("Send files")}
-                        Quick("Install APK",Icons.Default.InstallMobile,Modifier.weight(1f)){openNearby("Install APK")}
+                    saved.take(2).forEach{target->
+                        val live=connected && status.address==target.endpoint
+                        Surface(
+                            modifier=Modifier.fillMaxWidth().height(68.dp),
+                            shape=RoundedCornerShape(13.dp),color=Color.White,
+                            border=BorderStroke(1.dp,Border),
+                            shadowElevation=1.dp
+                        ){
+                            Row(Modifier.fillMaxSize().padding(horizontal=10.dp,vertical=7.dp),
+                                verticalAlignment=Alignment.CenterVertically,
+                                horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                Icon(if(target.pc)Icons.Default.Computer else Icons.Default.Tv,
+                                    null,Modifier.size(25.dp),tint=Ink)
+                                Column(Modifier.weight(1f),
+                                    verticalArrangement=Arrangement.spacedBy(3.dp)){
+                                    Text(target.customName ?: target.name,fontSize=12.sp,
+                                        fontWeight=FontWeight.Bold,color=Ink,maxLines=1)
+                                    Text(
+                                        "${if(target.pc)"Windows" else "Android TV"} · ${target.endpoint.substringBefore(':')}",
+                                        fontSize=10.sp,color=Muted,maxLines=1
+                                    )
+                                }
+                                Button(
+                                    onClick={open(target)},
+                                    modifier=Modifier.height(32.dp),
+                                    shape=RoundedCornerShape(9.dp),
+                                    contentPadding=PaddingValues(horizontal=11.dp),
+                                    colors=ButtonDefaults.buttonColors(containerColor=Ink)
+                                ){
+                                    Text(if(live)"Open" else "Connect",fontSize=10.sp,
+                                        color=Color.White)
+                                }
+                                Box {
+                                    IconButton(
+                                        onClick={menuTarget=target.endpoint},
+                                        modifier=Modifier.size(30.dp)
+                                    ){Icon(Icons.Default.MoreVert,"Device options",
+                                        Modifier.size(19.dp),tint=Ink)}
+                                    DropdownMenu(
+                                        expanded=menuTarget==target.endpoint,
+                                        onDismissRequest={menuTarget=null}
+                                    ){
+                                        DropdownMenuItem(text={Text("Rename")},
+                                            onClick={
+                                                menuTarget=null;renameTarget=target
+                                                renameText=target.customName ?: target.name
+                                                dialog="rename"
+                                            })
+                                        DropdownMenuItem(text={Text("Remove from saved")},
+                                            onClick={
+                                                menuTarget=null
+                                                targets=targets.filterNot{it.endpoint==target.endpoint}
+                                                saveTargets(context,targets)
+                                            })
+                                    }
+                                }
+                            }
+                        }
                     }
-                    Hint("Bluetooth Direct needs no PC app. Wi-Fi control uses DouPad Pro Host on the same network.")
+
+                    Text("Quick Actions",fontSize=17.sp,
+                        fontWeight=FontWeight.Bold,color=Ink,
+                        modifier=Modifier.padding(top=5.dp))
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        ConceptAction("Mouse Pad",Icons.Default.Mouse,Modifier.weight(1f)){
+                            openNearby("Mouse Pad")
+                        }
+                        ConceptAction("Air Mouse",Icons.Default.NearMe,Modifier.weight(1f)){
+                            openNearby("Air Mouse")
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        ConceptAction("Remote",Icons.Default.SettingsRemote,Modifier.weight(1f)){
+                            openNearby("Remote")
+                        }
+                        ConceptAction("Mirror",Icons.Default.CastConnected,Modifier.weight(1f)){
+                            openNearby("Mirror")
+                        }
+                    }
                 }
                 4->{
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
