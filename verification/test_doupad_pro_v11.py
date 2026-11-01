@@ -26,6 +26,6 @@ assert '0xFFF7F4F1' in theme and '0xFFF0ECE9' in theme
 assert '0xFFFCFAF8' in mouse
 assert '#171717' in icon and '#FFFFFF' in icon
 assert 'isAppearanceLightStatusBars = true' in main
-assert 'versionCode = 15' in build
-assert '0.15.0-tvbox-encoder-beta' in build
+assert 'versionCode = 16' in build
+assert '0.16.0-aceconn-encoder-switch-beta' in build
 print("DOUPAD_PRO_CONCEPT_04_IMPLEMENTATION_PASS")
