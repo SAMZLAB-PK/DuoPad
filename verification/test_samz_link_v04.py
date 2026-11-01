@@ -11,7 +11,7 @@ assert 'ConceptAction("Remote"' in ui and 'openNearby("Remote")' in ui
 assert 'openNearby("Mirror")' in ui
 assert '"Send files" ->' in ui
 assert '"Install APK" ->' in ui
-assert '4->{' in ui and 'Text("Devices"' in ui
+assert '4->{' in ui and 'Text("Select device"' in ui
 assert 'targetButton(Target(name,device.id,false' in ui or 'targetButton(Target(name,device.id,false,saved?.customName)' in ui
 assert 'targetButton(Target(name,host.address,true' in ui
 assert 'applySelectedAction()' in ui
