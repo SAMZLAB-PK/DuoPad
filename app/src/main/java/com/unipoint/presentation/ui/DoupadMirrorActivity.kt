@@ -5,6 +5,18 @@ import com.unipoint.core.util.MirrorCrashRecorder
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.graphics.drawable.GradientDrawable
+import android.graphics.PixelFormat
+import android.view.PixelCopy
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.os.Handler
+import android.os.Looper
+import android.widget.LinearLayout
+import android.widget.Toast
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.media.MediaCodecList
@@ -46,6 +58,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var session: Session? = null
     @Volatile private var stage: String = "Not started"
     @Volatile private var muted = false
+    private var topControls:LinearLayout?=null
+    private var leftControls:LinearLayout?=null
+    private var rightControls:LinearLayout?=null
+    private var bottomControls:LinearLayout?=null
 
     private fun checkpoint(ticket: Int, name: String) {
         stage = name
@@ -145,6 +161,11 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         setContentView(root)
         MirrorCrashRecorder.note(this, "ACTIVITY_CONTENT_READY: content view installed")
         surface.holder.addCallback(this)
+        createControls()
+        root.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ ->
+            session?.let { fitSurface(it.displayWidth,it.displayHeight) }
+            createControls()
+        }
         // Defer fullscreen flags until the DecorView is attached to a window.
         root.post {
             if (!isFinishing && !isDestroyed) enterImmersive()
@@ -186,8 +207,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         enterImmersive()
-        // Surface is kept at a stable size across rotation. Do not resize it
-        // while a video decoder is attached.
+        root.post {
+            createControls()
+            session?.let { fitSurface(it.displayWidth,it.displayHeight) }
+        }
     }
 
     private fun show(ticket: Int, message: String) = runOnUiThread {
@@ -197,19 +220,186 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
-    private fun fitSurface(videoWidth: Int, videoHeight: Int) {
-        val availableW = root.width
-        val availableH = root.height
-        if (availableW <= 0 || availableH <= 0 || videoWidth <= 0 || videoHeight <= 0) return
-        val scale = minOf(
-            availableW.toFloat() / videoWidth.toFloat(),
-            availableH.toFloat() / videoHeight.toFloat()
-        )
-        surface.layoutParams = FrameLayout.LayoutParams(
-            (videoWidth * scale).toInt().coerceAtLeast(1),
-            (videoHeight * scale).toInt().coerceAtLeast(1),
-            Gravity.CENTER
-        )
+    private fun fitSurface(videoWidth: Int,videoHeight: Int) {
+        val w=root.width;val h=root.height
+        if(w<=0||h<=0||videoWidth<=0||videoHeight<=0)return
+        // Do not resize the SurfaceHolder (would kill MediaCodec session).
+        // Scale the already-attached SurfaceView instead, preserving aspect.
+        val scale=minOf(w.toFloat()/videoWidth,h.toFloat()/videoHeight)
+        surface.scaleX=(videoWidth*scale)/w
+        surface.scaleY=(videoHeight*scale)/h
+    }
+
+    private fun dp(value:Int):Int=(value*resources.displayMetrics.density+0.5f).toInt()
+    private fun remoteButton(label:String,action:()->Unit):TextView {
+        val tile=GradientDrawable().apply{
+            setColor(0xDD383838.toInt());cornerRadius=dp(13).toFloat()
+        }
+        return TextView(this).apply{
+            text=label;textSize=20f;setTextColor(Color.WHITE)
+            gravity=Gravity.CENTER;background=tile
+            isClickable=true;contentDescription=label
+            setOnClickListener{action()}
+        }
+    }
+    private fun sendKey(code:Int){
+        val current=session ?: return
+        if(current.closed)return
+        inputWorker.execute{
+            if(current.closed)return@execute
+            try{
+                val control=current.control
+                if(control!=null){
+                    control.sink.write(ScrcpyControlProtocol.key(0,code))
+                    control.sink.write(ScrcpyControlProtocol.key(1,code))
+                    control.sink.flush()
+                }else current.adb.shell("input keyevent $code")
+            }catch(error:Exception){
+                MirrorCrashRecorder.note(this,
+                    "MIRROR_REMOTE_ERROR: ${error.javaClass.simpleName}: ${error.message}")
+            }
+        }
+    }
+    private fun saveScreenshot(){
+        if(surface.width<=0||surface.height<=0)return
+        val bitmap=Bitmap.createBitmap(surface.width,surface.height,Bitmap.Config.ARGB_8888)
+        PixelCopy.request(surface,bitmap,{result->
+            if(result==PixelCopy.SUCCESS){
+                try{
+                    val details=ContentValues().apply{
+                        put(MediaStore.Images.Media.DISPLAY_NAME,"DouPad-${System.currentTimeMillis()}.png")
+                        put(MediaStore.Images.Media.MIME_TYPE,"image/png")
+                        if(Build.VERSION.SDK_INT>=29)
+                            put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/DouPad")
+                    }
+                    val uri=contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,details)
+                    if(uri!=null){
+                        contentResolver.openOutputStream(uri)?.use{
+                            bitmap.compress(Bitmap.CompressFormat.PNG,100,it)
+                        }
+                        Toast.makeText(this,"Screenshot saved to Pictures/DouPad",Toast.LENGTH_SHORT).show()
+                    }
+                }catch(e:Exception){
+                    MirrorCrashRecorder.note(this,"SCREENSHOT_ERROR: ${e.message}")
+                }
+            }else Toast.makeText(this,"Screenshot unavailable",Toast.LENGTH_SHORT).show()
+            bitmap.recycle()
+        },Handler(Looper.getMainLooper()))
+    }
+    private fun startVoice(){
+        runCatching{
+            startActivityForResult(
+                Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                    .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM),601)
+        }.onFailure{
+            Toast.makeText(this,"Voice recognition is unavailable",Toast.LENGTH_SHORT).show()
+        }
+    }
+    @Deprecated("Android speech Activity result")
+    override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
+        super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode!=601||resultCode!=RESULT_OK)return
+        val spoken=data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull() ?:return
+        val current=session ?: return
+        inputWorker.execute{
+            if(current.closed)return@execute
+            runCatching{
+                val ctl=current.control
+                if(ctl!=null){
+                    ctl.sink.write(ScrcpyControlProtocol.text(spoken))
+                    ctl.sink.flush()
+                }else{
+                    // Android shell's input text accepts escaped spaces.
+                    val safe=spoken.replace(Regex("[^a-zA-Z0-9 ._-]"),"")
+                        .replace(" ","%s")
+                    current.adb.shell("input text $safe")
+                }
+            }.onFailure{MirrorCrashRecorder.note(this,"VOICE_SEND_ERROR: ${it.message}")}
+        }
+    }
+    private fun createControls(){
+        if(!::root.isInitialized)return
+        listOfNotNull(topControls,leftControls,rightControls,bottomControls).forEach{
+            root.removeView(it)
+        }
+        fun bar(vertical:Boolean):LinearLayout=LinearLayout(this).apply{
+            orientation=if(vertical)LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER
+        }
+        fun add(bar:LinearLayout,text:String,code:Int){
+            val button=remoteButton(text){sendKey(code)}
+            val dims=if(bar.orientation==LinearLayout.VERTICAL)
+                LinearLayout.LayoutParams(dp(48),dp(48))
+            else LinearLayout.LayoutParams(0,dp(43),1f)
+            dims.setMargins(dp(3),dp(3),dp(3),dp(3))
+            bar.addView(button,dims)
+        }
+        val header=bar(false)
+        val back=remoteButton("‹"){finish()}
+        val audio=remoteButton(if(muted)"🔇" else "♪"){
+            muted=!muted
+            session?.audioTrack?.setVolume(if(muted)0f else 1f)
+            createControls()
+        }
+        val rotate=remoteButton("⟳"){
+            requestedOrientation=
+                if(resources.configuration.orientation==Configuration.ORIENTATION_LANDSCAPE)
+                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+        val shot=remoteButton("▣"){saveScreenshot()}
+        val close=remoteButton("×"){finish()}
+        listOf(back,audio,rotate,shot,close).forEach{button->
+            val params=LinearLayout.LayoutParams(0,dp(39),1f)
+            params.setMargins(dp(2),0,dp(2),0)
+            header.addView(button,params)
+        }
+        topControls=header
+        root.addView(header,FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,dp(43),Gravity.TOP).apply{
+                leftMargin=dp(10);rightMargin=dp(10);topMargin=dp(8)
+            })
+        val landscape=resources.configuration.orientation==Configuration.ORIENTATION_LANDSCAPE
+        if(landscape){
+            val left=bar(true)
+            listOf("↑" to 19,"←" to 21,"OK" to 23,"→" to 22,"↓" to 20)
+                .forEach{(text,code)->add(left,text,code)}
+            root.addView(left,FrameLayout.LayoutParams(
+                dp(57),FrameLayout.LayoutParams.WRAP_CONTENT,Gravity.START or Gravity.CENTER_VERTICAL))
+            leftControls=left
+            val right=bar(true)
+            listOf("▣" to 82,"◁" to 4,"⌂" to 3,"🎤" to -1,"↩" to 4)
+                .forEach{(label,code)->
+                    if(code<0){
+                        val b=remoteButton(label){startVoice()}
+                        right.addView(b,LinearLayout.LayoutParams(dp(48),dp(48)).apply{
+                            setMargins(dp(3),dp(3),dp(3),dp(3))
+                        })
+                    }else add(right,label,code)
+                }
+            root.addView(right,FrameLayout.LayoutParams(
+                dp(57),FrameLayout.LayoutParams.WRAP_CONTENT,Gravity.END or Gravity.CENTER_VERTICAL))
+            rightControls=right
+        } else {
+            val bottom=bar(true)
+            val arrows=bar(false)
+            listOf("↑" to 19,"←" to 21,"OK" to 23,"→" to 22,"↓" to 20)
+                .forEach{(label,code)->add(arrows,label,code)}
+            val actions=bar(false)
+            listOf("‹" to 4,"⌂" to 3,"☰" to 82,"Vol +" to 24,"Vol -" to 25)
+                .forEach{(label,code)->add(actions,label,code)}
+            bottom.addView(arrows,LinearLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,dp(51)))
+            bottom.addView(actions,LinearLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,dp(51)))
+            root.addView(bottom,FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,dp(110),Gravity.BOTTOM).apply{
+                leftMargin=dp(7);rightMargin=dp(7);bottomMargin=dp(12)
+            })
+            bottomControls=bottom
+        }
     }
 
     private fun sendTouch(event: MotionEvent) {
@@ -437,6 +627,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
             current.displayWidth = width
             current.displayHeight = height
+            runOnUiThread {
+                if(generation.get()==ticket)
+                    root.post { fitSurface(width,height) }
+            }
 
             if (profile.audio) {
                 val audioSource=current.audio?.source ?: error("Audio socket missing")
