@@ -79,7 +79,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val scope=rememberCoroutineScope()
     val snack=remember { SnackbarHostState() }
-    var page by rememberSaveable { mutableStateOf(0) }
+    var page by rememberSaveable { mutableStateOf(4) }
     var detail by rememberSaveable { mutableStateOf<String?>(null) }
     var dialog by remember { mutableStateOf<String?>(null) }
     var output by remember { mutableStateOf("") }
@@ -91,7 +91,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     var pcTransport by rememberSaveable { mutableStateOf("bluetooth") }
     var localError by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("All") }
-    var scanFilter by rememberSaveable { mutableStateOf("Saved") }
+    var scanFilter by rememberSaveable { mutableStateOf("Android TV") }
     var remoteMode by rememberSaveable { mutableIntStateOf(0) }
     var connectRequested by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Target?>(null) }
@@ -174,18 +174,20 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 if(isTv) {page=3;detail="apps"}
                 else {page=3;message("APK installation is for Android devices only.")}
             }
-            else -> page=1
+            "Remote" -> page=1
+            "Tools" -> page=3
+            else -> page=3
         }
-        pendingQuickAction="Remote"
+        pendingQuickAction="Tools"
     }
     fun openNearby(action:String) {
         pendingQuickAction=action
-        scanFilter="Saved"
+        scanFilter="Android TV"
         page=4
         vm.scanNearby()
     }
     fun open(target:Target) {
-        if(page != 4) pendingQuickAction="Remote"
+        if(page != 4) pendingQuickAction="Tools"
         if(connected && status.address==target.endpoint){applySelectedAction();return}
         ip=target.endpoint.substringBefore(':')
         port=target.endpoint.substringAfter(':',if(target.pc)"27845" else "5555")
@@ -218,7 +220,8 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     LaunchedEffect(dialog,pc,pcTransport) {
         if(dialog=="connect" && pc && pcTransport=="wifi") vm.scanPc()
     }
-    BackHandler(detail!=null||page!=0||dialog!=null){if(dialog!=null)dialog=null else if(detail!=null)detail=null else page=0}
+    LaunchedEffect(Unit) { vm.scanNearby() }
+    BackHandler(detail!=null||page!=4||dialog!=null){if(dialog!=null)dialog=null else if(detail!=null)detail=null else page=4}
     val back={detail=null}
     when(detail) {
         "apps"->{AppManagerScreen(onBack=back);return}
@@ -249,46 +252,29 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
         "pcKeyboard"->{KeyboardScreen(onBack=back);return}
     }
     Scaffold(containerColor=Background,snackbarHost={SnackbarHost(snack)},bottomBar={
-        Surface(color=Background, shadowElevation=0.dp) {
-            Row(
-                modifier=Modifier.fillMaxWidth().navigationBarsPadding()
-                    .height(70.dp).padding(horizontal=8.dp,vertical=5.dp),
-                horizontalArrangement=Arrangement.SpaceEvenly,
-                verticalAlignment=Alignment.CenterVertically
-            ) {
-                val tabs=listOf(
-                    Triple("Home",Icons.Default.Home,0),
-                    Triple("Devices",Icons.Default.Computer,4),
-                    Triple("Tools",Icons.Default.Handyman,3),
-                    Triple("Settings",Icons.Default.Settings,5)
-                )
-                tabs.forEach { (label,icon,destination) ->
-                    val selected=page==destination
-                    Column(
-                        modifier=Modifier.weight(1f)
-                            .clickable {
-                                if(destination==4)openNearby("Remote")
-                                else {page=destination;detail=null}
-                            },
-                        horizontalAlignment=Alignment.CenterHorizontally,
-                        verticalArrangement=Arrangement.spacedBy(2.dp)
-                    ) {
-                        Surface(
-                            color=if(selected)Ink else Color.Transparent,
-                            shape=CircleShape,
-                            modifier=Modifier.width(59.dp).height(31.dp)
-                        ) {
-                            Box(contentAlignment=Alignment.Center) {
-                                Icon(
-                                    imageVector=icon,contentDescription=label,
-                                    modifier=Modifier.size(22.dp),
-                                    tint=if(selected)Color.White else Ink
-                                )
+        if(page!=4 && connected){
+            Surface(color=Background){
+                Row(Modifier.fillMaxWidth().navigationBarsPadding().height(65.dp),
+                    horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically){
+                    listOf(
+                        Triple("Tools",Icons.Default.Handyman,"tools"),
+                        Triple("Apps",Icons.Default.GridView,"apps"),
+                        Triple("Shell",Icons.Default.Terminal,"shellFull"),
+                        Triple("Info",Icons.Default.Info,"infoFull")
+                    ).forEach { (label,icon,target) ->
+                        Column(Modifier.weight(1f).clickable {
+                            if(target=="tools"){page=3;detail=null}
+                            else if(requireTv())detail=target
+                        },horizontalAlignment=Alignment.CenterHorizontally){
+                            Surface(color=if(page==3&&target=="tools")Ink else Color.Transparent,
+                                shape=CircleShape,modifier=Modifier.width(56.dp).height(29.dp)){
+                                Box(contentAlignment=Alignment.Center){
+                                    Icon(icon,label,Modifier.size(21.dp),
+                                        tint=if(page==3&&target=="tools")Color.White else Ink)
+                                }
                             }
+                            Text(label,color=Ink,fontSize=11.sp)
                         }
-                        Text(label,fontSize=11.sp,
-                            fontWeight=if(selected)FontWeight.Bold else FontWeight.Medium,
-                            color=Ink,maxLines=1)
                     }
                 }
             }
@@ -475,22 +461,35 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     }
                 }
                 4->{
-                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                        IconButton(onClick={page=0;pendingQuickAction="Remote"}) { Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back") }
-                        Column(Modifier.weight(1f)) {
-                            Text("Devices",fontSize=23.sp,fontWeight=FontWeight.Bold,color=Ink)
-                            Text("Saved and nearby screens · $pendingQuickAction",fontSize=12.sp,color=Muted)
-                        }
-                        IconButton(onClick={vm.scanNearby()}) { Icon(Icons.Default.Refresh,"Scan again",tint=Teal) }
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
+                        horizontalArrangement=Arrangement.SpaceBetween){
+                        Text("DOUPAD",fontSize=25.sp,fontWeight=FontWeight.Black,color=Ink)
+                        IconButton(onClick={vm.scanNearby()}){Icon(Icons.Default.Refresh,"Refresh",tint=Ink)}
                     }
-                    Surface(color=Pale,shape=RoundedCornerShape(12.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(13.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                            Icon(Icons.Default.Lock,null,Modifier.size(18.dp),tint=Teal)
-                            Text("Saved devices were previously connected/authorized. Network scanning itself never sends an ADB authorization request.",fontSize=12.sp,color=Ink)
+                    Text("Last connected",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink)
+                    val lastConnected=targets.firstOrNull()
+                    if(lastConnected!=null){
+                        Surface(onClick={open(lastConnected)},modifier=Modifier.fillMaxWidth(),
+                            shape=RoundedCornerShape(17.dp),color=Pale){
+                            Row(Modifier.padding(18.dp),verticalAlignment=Alignment.CenterVertically){
+                                Icon(if(lastConnected.pc)Icons.Default.Computer else Icons.Default.Tv,
+                                    null,Modifier.size(29.dp),tint=Ink)
+                                Spacer(Modifier.width(13.dp))
+                                Column(Modifier.weight(1f)){
+                                    Text(lastConnected.customName?:lastConnected.name,
+                                        fontWeight=FontWeight.Bold,color=Ink,fontSize=17.sp)
+                                    Text(lastConnected.endpoint.substringBefore(':'),color=Muted,fontSize=12.sp)
+                                }
+                                Icon(Icons.Default.ChevronRight,"Open device",tint=Ink)
+                            }
                         }
                     }
+                    Text("Select device",fontSize=18.sp,fontWeight=FontWeight.Bold,
+                        color=Ink,modifier=Modifier.padding(top=9.dp))
+                    Text("Android TV, PC or previously authorized devices. Scanning does not request debugging access.",
+                        fontSize=12.sp,color=Muted)
                     Row(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-                        listOf("Saved","All","TV","PC").forEach { type ->
+                        listOf("Android TV","All","Saved","PC").forEach { type ->
                             FilterChip(selected=scanFilter==type,onClick={scanFilter=type},label={Text(type,fontSize=11.sp)})
                         }
                     }
@@ -524,12 +523,12 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                                     device.id + if(saved!=null)" · Saved" else " · Tap to authorize & connect",
                                     if(saved!=null)Teal else Muted)()
                             }
-                            if(scanFilter=="TV" || scanFilter=="All"){
+                            if(scanFilter=="Android TV" || scanFilter=="All"){
                                 savedTargets.filter { !it.pc && androidFound.none { d->d.id==it.endpoint } }
                                     .forEach { target -> targetButton(target,target.endpoint+" · Saved / offline")() }
                             }
                         }
-                        if(scanFilter!="TV"){
+                        if(scanFilter!="Android TV"){
                             pcFound.forEach { host ->
                                 val saved=savedTargets.firstOrNull { it.endpoint==host.address }
                                 val name=saved?.customName ?: saved?.name ?: host.name
