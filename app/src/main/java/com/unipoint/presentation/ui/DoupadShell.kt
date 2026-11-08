@@ -697,6 +697,7 @@ fun DoupadShell(
                             val selected=remoteMode==i
                             Surface(onClick={
                                 remoteMode=i
+                                if(i==1 && requireTv()){airMouseSelected=false;detail="mouse"}
                                 if(i==2 && requireTv()){airMouseSelected=true;detail="mouse"}
                                 if(i==3 && requireTv())detail="androidKeyboard"
                             },modifier=Modifier.weight(1f).height(35.dp),
