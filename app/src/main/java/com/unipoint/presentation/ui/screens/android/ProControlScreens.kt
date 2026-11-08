@@ -1,8 +1,11 @@
 package com.unipoint.presentation.ui.screens.android
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import com.unipoint.presentation.ui.theme.DuoColors
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
@@ -59,16 +62,39 @@ fun AdbShellScreen(
     viewModel: MainViewModel = hiltViewModel()
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var presetsExpanded by remember { mutableStateOf(false) }
     var command by remember { mutableStateOf("") }
     var output by remember { mutableStateOf("Ready. Enter an ADB shell command or tap a hint.") }
     var running by remember { mutableStateOf(false) }
+    // Safe, read-only ADB shell presets. Power/reset/uninstall stay manual.
     val hints = listOf(
-        "Device model" to "getprop ro.product.model",
-        "Android version" to "getprop ro.build.version.release",
+        "Model" to "getprop ro.product.model",
+        "Android" to "getprop ro.build.version.release",
+        "Device name" to "settings get global device_name",
+        "Manufacturer" to "getprop ro.product.manufacturer",
+        "Architecture" to "getprop ro.product.cpu.abi",
+        "Uptime" to "uptime",
         "Battery" to "dumpsys battery | grep -E 'level|status|temperature'",
+        "Memory" to "cat /proc/meminfo | head -12",
         "Storage" to "df -h /data",
-        "Wi-Fi IP" to "ip route get 1.1.1.1",
-        "User apps" to "pm list packages -3"
+        "Partitions" to "df -h",
+        "Wi-Fi IP" to "ip -4 addr show wlan0",
+        "Network route" to "ip route",
+        "DNS" to "getprop net.dns1",
+        "Wi-Fi signal" to "dumpsys wifi | grep -E 'RSSI|SSID|Link speed' | head -15",
+        "Running apps" to "dumpsys activity activities | grep mResumedActivity",
+        "User apps" to "pm list packages -3",
+        "System apps" to "pm list packages -s",
+        "All packages" to "pm list packages",
+        "Media codecs" to "dumpsys media.codec | head -120",
+        "Displays" to "dumpsys display | grep -E 'DisplayDeviceInfo|mBaseDisplayInfo' | head -20",
+        "Screen size" to "wm size",
+        "Screen density" to "wm density",
+        "Audio status" to "dumpsys audio | head -80",
+        "Processes" to "ps -A | head -40",
+        "ADB status" to "getprop service.adb.tcp.port",
+        "Build fingerprint" to "getprop ro.build.fingerprint"
     )
     fun runCommand() {
         val cmd = command.trim()
@@ -83,7 +109,7 @@ fun AdbShellScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Column { Text("ADB Shell", fontWeight = FontWeight.Bold); Text("DouPad Pro", fontSize = 11.sp) } },
+                title = { Column { Text("ADB Shell", fontWeight = FontWeight.Bold); Text("DuoPad Pro", fontSize = 11.sp) } },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     IconButton(onClick = { command="";output="Ready." }) { Icon(Icons.Default.DeleteSweep, "Clear") }
@@ -108,29 +134,52 @@ fun AdbShellScreen(
                 Spacer(Modifier.width(8.dp)); Text(if (running) "Running…" else "Run command")
             }
 
-            Text("Quick hints", fontWeight = FontWeight.SemiBold)
-            hints.chunked(2).forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { (label, cmd) ->
-                        AssistChip(
-                            onClick = { command = cmd },
-                            label = { Text(label, fontSize = 11.sp) },
-                            modifier = Modifier.weight(1f)
-                        )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Quick commands", fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f))
+                Box {
+                    OutlinedButton(onClick = { presetsExpanded = true },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                        modifier = Modifier.height(37.dp)) {
+                        Icon(Icons.Default.List, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("All ${hints.size} commands", fontSize = 11.sp)
                     }
-                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                    DropdownMenu(expanded = presetsExpanded,
+                        onDismissRequest = { presetsExpanded = false }) {
+                        hints.forEach { (label, cmd) ->
+                            DropdownMenuItem(text = { Text(label, fontSize = 12.sp) },
+                                onClick = { command = cmd; presetsExpanded = false })
+                        }
+                    }
                 }
             }
-            Text("Output", fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                hints.take(4).forEach { (label, cmd) ->
+                    SuggestionChip(onClick = { command = cmd },
+                        label = { Text(label, fontSize = 10.sp, maxLines = 1) },
+                        modifier = Modifier.weight(1f))
+                }
+            }
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Output", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("DuoPad Shell output", output))
+                }, enabled = output.isNotBlank()) {
+                    Icon(Icons.Default.ContentCopy, "Copy output", Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp)); Text("Copy", fontSize = 12.sp)
+                }
+            }
             Surface(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp),
                 shape = RoundedCornerShape(14.dp),
                 color = DuoColors.Console
             ) {
-                Text(
-                    output, color = DuoColors.ConsoleText, fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp, modifier = Modifier.padding(14.dp)
-                )
+                SelectionContainer {
+                    Text(output, color = DuoColors.ConsoleText, fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp, modifier = Modifier.padding(14.dp))
+                }
             }
             Text(
                 "Tip: commands run only on the currently connected Android TV/Box. A lost ADB socket is retried once automatically.",

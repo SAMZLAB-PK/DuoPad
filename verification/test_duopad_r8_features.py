@@ -1,0 +1,22 @@
+from pathlib import Path
+root=Path(__file__).resolve().parents[1]
+src=root/'app/src/main/java/com/unipoint'
+shell=(src/'presentation/ui/DoupadShell.kt').read_text()
+app=(src/'presentation/ui/screens/android/AppManagerScreen.kt').read_text()
+shellScreen=(src/'presentation/ui/screens/android/ProControlScreens.kt').read_text()
+mirror=(src/'presentation/ui/DoupadMirrorActivity.kt').read_text()
+gradle=(root/'app/build.gradle.kts').read_text()
+assert 'applicationId = "com.samzlab.duopad"' in gradle
+assert 'versionCode = 20' in gradle and 'versionName = "0.17.0-r8"' in gradle
+assert 'DropdownMenu(' in app and 'expandedAppMenu' in app
+assert 'Text("Force stop")' in app and 'Text("Uninstall"' in app
+assert 'modifier=modifier.height(94.dp)' in shell
+assert 'showNumberPad' in shell and 'CompactRemoteKey' in shell and 'VolumeKnob' in shell
+assert 'Icons.Default.Dialpad' in shell
+assert 'DuoPad logo' in shell
+assert 'presetsExpanded' in shellScreen and 'SelectionContainer' in shellScreen
+assert 'ClipData.newPlainText("DuoPad Shell output", output)' in shellScreen
+assert 'smooth_tv_mode' in mirror and 'smooth_tv_mode' in shell
+assert 'snapshotMode' in mirror and 'SNAPSHOT_FRAME' in mirror
+assert 'VideoProfile(640,12,750_000,true,false)' in mirror
+print('DOUPAD_R8_BRANDING_UI_MIRROR_SOURCE_PASS')

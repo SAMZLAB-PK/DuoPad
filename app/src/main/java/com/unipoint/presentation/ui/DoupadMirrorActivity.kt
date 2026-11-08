@@ -7,6 +7,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.drawable.GradientDrawable
 import android.graphics.PixelFormat
 import android.view.PixelCopy
@@ -35,6 +36,7 @@ import android.view.WindowManager
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import com.unipoint.core.util.MirrorCoordinateMapper
 import com.unipoint.data.remote.ScrcpyControlProtocol
@@ -72,6 +74,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     // Manual selection avoids confusing legitimate static/DRM black frames with
     // encoder failure. This setting only affects the opt-in TV Box mode.
     private var aceconnEncoderIndex=0
+    @Volatile private var snapshotMode=false
+    @Volatile private var snapshotAdb: Dadb?=null
+    private var snapshotPreview: ImageView?=null
     private var lastVideoSampleHash:Int?=null
     private var topControls:LinearLayout?=null
     private var leftControls:LinearLayout?=null
@@ -130,7 +135,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Keep phone awake only while Mirror Activity is foregrounded.
+        // Keep the phone screen awake for the entire foreground mirror session.
+        // This does not require WAKE_LOCK permission or modify global display timeout.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Never force orientation during startup: some Android 15/16 device
         // configurations reject an orientation request before the first draw.
@@ -227,12 +233,14 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     override fun onPause() {
         MirrorCrashRecorder.note(this,
             "ACTIVITY_PAUSE: generation=${generation.get()}; sessionOpen=${session?.closed == false}")
+        // Restore normal phone timeout while the mirror Activity is backgrounded.
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onPause()
     }
 
     override fun onResume() {
         super.onResume()
+        // Reapply after returning from notification shade, permission prompt, etc.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (::surface.isInitialized) MirrorCrashRecorder.note(this,
             "ACTIVITY_RESUME: generation=${generation.get()}; surfaceValid=${surface.holder.surface.isValid}")
@@ -488,6 +496,91 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         },600L)
     }
 
+
+    // Explicit alternative for unusual TV firmwares that return only black H.264
+    // packets. This is a low-rate screenshot preview (NOT a live video stream).
+    // Protected/DRM content remains protected; never attempt to bypass it.
+    private fun toggleSnapshotFallback() {
+        if (snapshotMode) {
+            snapshotMode=false
+            val ticket=generation.incrementAndGet()
+            snapshotAdb?.let { adb -> thread(isDaemon=true){runCatching{adb.close()}} }
+            snapshotAdb=null
+            snapshotPreview?.let { root.removeView(it) }
+            snapshotPreview=null
+            MirrorCrashRecorder.note(this,"SNAPSHOT_MODE_STOP: returning to live H.264")
+            createControls()
+            status.visibility=View.VISIBLE
+            status.text="Returning to live video…"
+            surfaceStartHandler.postDelayed({
+                if(generation.get()==ticket && surface.holder.surface.isValid && !isDestroyed){
+                    worker.execute{stream(surface.holder,ticket)}
+                }
+            },350L)
+            return
+        }
+        snapshotMode=true
+        val ticket=generation.incrementAndGet()
+        session?.close()
+        session=null
+        MirrorCrashRecorder.note(this,"SNAPSHOT_MODE_START: ADB screencap preview, up to 1 fps")
+        val overlay=ImageView(this).apply{
+            scaleType=ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.BLACK)
+        }
+        snapshotPreview=overlay
+        root.addView(overlay,1,FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,FrameLayout.LayoutParams.MATCH_PARENT))
+        createControls()
+        status.visibility=View.VISIBLE
+        status.text="Screenshot compatibility preview · slower than live video"
+        worker.execute {
+            var adb: Dadb?=null
+            try {
+                val endpoint=intent.getStringExtra("endpoint") ?: error("No TV endpoint")
+                val keyDir=File(filesDir,"adb")
+                val keys=AdbKeyPair.read(File(keyDir,"adbkey"),File(keyDir,"adbkey.pub"))
+                adb=Dadb.create(endpoint.substringBefore(':'),
+                    endpoint.substringAfter(':',"5555").toInt(), keys,
+                    connectTimeout=5000,socketTimeout=7000)
+                snapshotAdb=adb
+                var pictures=0
+                while(snapshotMode && generation.get()==ticket && !isDestroyed){
+                    val stream=adb!!.open("shell:screencap -p")
+                    val bytes=try{stream.source.readByteArray()}finally{runCatching{stream.close()}}
+                    val sig=byteArrayOf(0x89.toByte(),0x50,0x4e,0x47)
+                    if(bytes.size>100 && bytes.copyOfRange(0,4).contentEquals(sig)){
+                        val bitmap=BitmapFactory.decodeByteArray(bytes,0,bytes.size)
+                        if(bitmap!=null){
+                            pictures++
+                            val number=pictures
+                            runOnUiThread{
+                                if(snapshotMode && generation.get()==ticket){
+                                    snapshotPreview?.setImageBitmap(bitmap)
+                                    status.visibility=View.GONE
+                                    if(number==1 || number%10==0){
+                                        MirrorCrashRecorder.note(this,
+                                            "SNAPSHOT_FRAME: valid PNG, ${bitmap.width}x${bitmap.height}, frame=$number")
+                                    }
+                                }else bitmap.recycle()
+                            }
+                        }
+                    }else{
+                        MirrorCrashRecorder.note(this,"SNAPSHOT_INVALID: screencap returned ${bytes.size} bytes")
+                        show(ticket,"TV screenshot not available; switch back to LIVE")
+                    }
+                    Thread.sleep(1200)
+                }
+            }catch(e:Exception){
+                MirrorCrashRecorder.note(this,"SNAPSHOT_ERROR: ${e.javaClass.simpleName}: ${e.message}")
+                show(ticket,"Screenshot preview unavailable: ${e.message}")
+            }finally{
+                runCatching{adb?.close()}
+                if(snapshotAdb===adb)snapshotAdb=null
+            }
+        }
+    }
+
     private fun createControls(){
         if(!::root.isInitialized)return
         listOfNotNull(topControls,leftControls,rightControls,bottomControls).forEach{
@@ -522,6 +615,12 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         val close=remoteButton("×"){finish()}
         val headerButtons=mutableListOf(back,audio,rotate,shot)
         if(intent.getBooleanExtra("aceconn_mode",false)){
+            headerButtons.add(remoteButton(if(snapshotMode)"LIVE" else "SHOT"){
+                toggleSnapshotFallback()
+            }.apply{
+                textSize=12f
+                contentDescription="Toggle slow screenshot compatibility preview"
+            })
             headerButtons.add(remoteButton("ENC"){nextTvBoxEncoder()}.apply{
                 textSize=13f
                 contentDescription="Try next Aceconn video encoder"
@@ -676,6 +775,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        snapshotMode=false
+        snapshotAdb?.let { adb -> thread(isDaemon=true){runCatching{adb.close()}} }
+        snapshotAdb=null
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         generation.incrementAndGet()
         session?.close()
@@ -695,24 +797,32 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         // Second preset deliberately disables scrcpy control socket. Some Android TV
         // firmware streams video reliably but rejects the second abstract socket.
         val aceconnMode=intent.getBooleanExtra("aceconn_mode",false)
+        val smoothMode=intent.getBooleanExtra("smooth_tv_mode",false)
+        val withAudio=intent.getBooleanExtra("tv_audio_mode",false)
         val profiles=if(aceconnMode) listOf(
-            // Start with the vendor/system encoder, then alternate software
-            // encoders. The old forced c2.android profile produced black frames
-            // on the reported Aceconn box (valid codec, audio but no picture).
-            VideoProfile(720,15,1_500_000,true,true),
-            VideoProfile(720,15,1_200_000,true,true,"c2.android.avc.encoder"),
-            VideoProfile(640,12,950_000,true,true,"OMX.google.h264.encoder"),
-            // Last attempt also avoids the device audio socket and uses the
-            // phone's software H.264 decoder to isolate decoder incompatibility.
-            VideoProfile(640,12,950_000,true,false,null,true)
-        ).let { all -> all.drop(aceconnEncoderIndex.coerceIn(0, all.lastIndex)) + all.take(aceconnEncoderIndex.coerceIn(0, all.lastIndex)) } else listOf(
-            VideoProfile(960, 24, 2_000_000, true, true),
-            VideoProfile(720, 15, 1_200_000, true, false)
+            // Vendor encoder can produce blank frames on some Aceconn boxes.
+            // Try a much lighter video-only capture before alternate codecs.
+            VideoProfile(640,12,750_000,true,false),
+            VideoProfile(720,12,850_000,true,false,"c2.android.avc.encoder"),
+            VideoProfile(640,10,650_000,true,false,"OMX.google.h264.encoder"),
+            VideoProfile(640,10,600_000,true,false,null,true)
+        ).let { all -> all.drop(aceconnEncoderIndex.coerceIn(0,all.lastIndex)) +
+            all.take(aceconnEncoderIndex.coerceIn(0,all.lastIndex)) }
+        else if(smoothMode) listOf(
+            VideoProfile(640,12,750_000,true,false),
+            VideoProfile(720,15,1_050_000,true,false)
+        ) else if(withAudio) listOf(
+            VideoProfile(960,24,2_000_000,true,true),
+            VideoProfile(720,15,1_200_000,true,true)
+        ) else listOf(
+            // Default uses fewer TV encoder resources than old 960p/24fps.
+            VideoProfile(720,15,1_000_000,true,false),
+            VideoProfile(640,12,750_000,true,false)
         )
         MirrorCrashRecorder.note(this,
-            "STREAM_MODE: ${if(aceconnMode)"TV_BOX_COMPATIBILITY" else "STANDARD"}; " +
+            "STREAM_MODE: ${if(aceconnMode)"TV_BOX_COMPATIBILITY" else if(smoothMode)"SMOOTH_VIDEO_ONLY" else if(withAudio)"AUDIO_HIGH_QUALITY" else "STANDARD_LOW_LOAD"}; " +
                 "profileCount=${profiles.size}; selectedIndex=${if(aceconnMode)aceconnEncoderIndex else 0}; " +
-                "blackOutputRecovery=${if(aceconnMode) "two-sample-auto-retry" else "off"}")
+                "blackOutputRecovery=${if(aceconnMode) "sustained-black-auto-retry" else "off"}")
         for ((index, profile) in profiles.withIndex()) {
             if (generation.get() != ticket) return
             checkpoint(ticket,
@@ -732,7 +842,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                         "TV firmware or protected content may block screen capture."
                 )
             } else {
-                show(ticket, "Video not visible; trying alternate compatibility profile…")
+                show(ticket, "Trying the next video profile…")
                 Thread.sleep(450)
             }
         }

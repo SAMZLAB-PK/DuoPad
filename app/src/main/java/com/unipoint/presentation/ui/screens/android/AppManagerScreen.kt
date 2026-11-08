@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.unipoint.domain.model.AdbCommand
@@ -40,6 +41,7 @@ fun AppManagerScreen(
     var enrichmentDone by remember { mutableIntStateOf(0) }
     var downloading by remember { mutableStateOf<String?>(null) }
     var uninstallTarget by remember { mutableStateOf<InstalledApp?>(null) }
+    var expandedAppMenu by remember { mutableStateOf<String?>(null) }
 
 
     fun refresh() {
@@ -143,12 +145,13 @@ fun AppManagerScreen(
                         }
                         ListItem(
                             headlineContent = {
-                                Text(app.label, fontWeight = FontWeight.Medium)
+                                Text(app.label, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             },
                             supportingContent = {
                                 Text(
                                     listOfNotNull(app.packageName, app.versionName?.let { "v$it" }).joinToString(" • "),
-                                    style = MaterialTheme.typography.bodySmall
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis
                                 )
                             },
                             leadingContent = {
@@ -163,45 +166,56 @@ fun AppManagerScreen(
                                 }
                             },
                             trailingContent = {
-                                Row {
-                                    IconButton(onClick = {
-                                        scope.launch {
-                                            viewModel.executeAdb(
-                                                AdbCommand.Shell("monkey -p ${app.packageName} -c android.intent.category.LAUNCHER 1")
-                                            )
-                                        }
-                                    }) { Icon(Icons.Default.PlayArrow, "Launch") }
-
-                                    IconButton(
-                                        enabled = downloading == null,
-                                        onClick = {
-                                            scope.launch {
-                                                downloading = app.packageName
-                                                viewModel.downloadApp(app.packageName)
-                                                    .onSuccess { snackbar.showSnackbar("Downloaded ${app.label} to Downloads/UniPoint") }
-                                                    .onFailure { snackbar.showSnackbar("Download failed: ${it.message}") }
-                                                downloading = null
-                                            }
-                                        }
-                                    ) {
-                                        if (downloading == app.packageName) {
-                                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                        } else {
-                                            Icon(Icons.Default.Download, "Download APK")
-                                        }
+                                Box {
+                                    IconButton(onClick = { expandedAppMenu = app.packageName }) {
+                                        Icon(Icons.Default.MoreVert, "Actions for ${app.label}")
                                     }
-
-                                    IconButton(onClick = {
-                                        scope.launch {
-                                            viewModel.executeAdb(
-                                                AdbCommand.Shell("am force-stop ${app.packageName}")
-                                            )
-                                            snackbar.showSnackbar("Force-stopped ${app.label}")
-                                        }
-                                    }) { Icon(Icons.Default.Stop, "Force Stop") }
-
-                                    IconButton(onClick = { uninstallTarget = app }) {
-                                        Icon(Icons.Default.Delete, "Uninstall", tint = MaterialTheme.colorScheme.error)
+                                    DropdownMenu(
+                                        expanded = expandedAppMenu == app.packageName,
+                                        onDismissRequest = { expandedAppMenu = null }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Launch") },
+                                            leadingIcon = { Icon(Icons.Default.PlayArrow, null) },
+                                            onClick = {
+                                                expandedAppMenu = null
+                                                viewModel.executeAdb(AdbCommand.Shell(
+                                                    "monkey -p ${app.packageName} -c android.intent.category.LAUNCHER 1"))
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(if (downloading == app.packageName) "Downloading…" else "Download APK") },
+                                            leadingIcon = { Icon(Icons.Default.Download, null) },
+                                            enabled = downloading == null,
+                                            onClick = {
+                                                expandedAppMenu = null
+                                                scope.launch {
+                                                    downloading = app.packageName
+                                                    try {
+                                                        viewModel.downloadApp(app.packageName)
+                                                            .onSuccess { snackbar.showSnackbar("Downloaded ${app.label} to Downloads/DuoPad") }
+                                                            .onFailure { snackbar.showSnackbar("Download failed: ${it.message}") }
+                                                    } finally { downloading = null }
+                                                }
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Force stop") },
+                                            leadingIcon = { Icon(Icons.Default.Stop, null) },
+                                            onClick = {
+                                                expandedAppMenu = null
+                                                scope.launch {
+                                                    viewModel.executeAdb(AdbCommand.Shell("am force-stop ${app.packageName}"))
+                                                    snackbar.showSnackbar("Force-stopped ${app.label}")
+                                                }
+                                            }
+                                        )
+                                        HorizontalDivider()
+                                        DropdownMenuItem(
+                                            text = { Text("Uninstall", color = MaterialTheme.colorScheme.error) },
+                                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                            onClick = { expandedAppMenu = null; uninstallTarget = app }
+                                        )
                                     }
                                 }
                             }

@@ -752,7 +752,7 @@ class AdbDataSource constructor(
                 val values = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                     put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
-                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/UniPoint")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/DuoPad")
                     put(MediaStore.Downloads.IS_PENDING, 1)
                 }
                 val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -765,14 +765,14 @@ class AdbDataSource constructor(
                     values.put(MediaStore.Downloads.IS_PENDING, 0)
                     context.contentResolver.update(uri, values, null, null)
                     temp.delete()
-                    Result.success("Downloads/UniPoint/$fileName")
+                    Result.success("Downloads/DuoPad/$fileName")
                 } catch (e: Exception) {
                     context.contentResolver.delete(uri, null, null)
                     throw e
                 }
             } else {
                 val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                    .resolve("UniPoint").apply { mkdirs() }
+                    .resolve("DuoPad").apply { mkdirs() }
                 val target = File(dir, fileName)
                 temp.copyTo(target, overwrite = true)
                 temp.delete()

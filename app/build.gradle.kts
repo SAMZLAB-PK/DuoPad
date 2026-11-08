@@ -12,11 +12,11 @@ android {
     buildToolsVersion = "35.0.0"
 
     defaultConfig {
-        applicationId = "com.samz.samzlink"
+        applicationId = "com.samzlab.duopad"
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.16.3-r7-mirror-screen-awake"
+        versionCode = 20
+        versionName = "0.17.0-r8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
@@ -32,7 +32,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            applicationIdSuffix = ".beta"
+            // No debug suffix: keep exact application ID
             isMinifyEnabled = false
         }
     }

@@ -18,7 +18,7 @@
     <string name="screenshot">Screenshot</string>
     <string name="reboot">Reboot</string>
     <string name="settings">Settings</string>
-    <string name="notification_title">DouPad Pro Active</string>
+    <string name="notification_title">DuoPad Pro Active</string>
     <string name="notification_text">Secure connection active</string>
     <string name="bluetooth_hid">Bluetooth HID</string>
     <string name="network_host">Network Host</string>

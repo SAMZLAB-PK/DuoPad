@@ -27,8 +27,8 @@ assert '"clearLogs"' in shell
 assert 'AUTO_PROFILE_RETRY' in mirror
 assert 'current.visibilityMonitor.observe(' in mirror
 assert 'scheduleVisibleVideoSample(ticket,current,1500L)' in mirror
-assert 'VideoProfile(640,12,950_000,true,false,null,true)' in mirror
+assert 'VideoProfile(640,10,600_000,true,false,null,true)' in mirror
 assert 'videoEncoder' not in mirror  # avoid accidental bogus argument
-assert any(token in build for token in ['versionCode = 18', 'versionCode = 19'])
-assert 'applicationId = "com.samz.samzlink"' in build
+assert any(token in build for token in ['versionCode = 18', 'versionCode = 19', 'versionCode = 20'])
+assert 'applicationId = "com.samzlab.duopad"' in build
 print('DOUPAD_R5_UI_SAVED_THEME_DIAGNOSTICS_MIRROR_SOURCE_PASS')

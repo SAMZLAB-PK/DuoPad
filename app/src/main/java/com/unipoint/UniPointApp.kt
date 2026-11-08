@@ -23,7 +23,7 @@ class UniPointApp : Application() {
                 "Active Connection",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps DOUPAD connection alive in background"
+                description = "Keeps DuoPad connection alive in background"
                 setShowBadge(false)
             }
 

@@ -370,7 +370,7 @@ private suspend fun saveToDownloads(context: android.content.Context, source: Fi
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
             put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/UniPoint")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/DuoPad")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -381,14 +381,14 @@ private suspend fun saveToDownloads(context: android.content.Context, source: Fi
             values.clear()
             values.put(MediaStore.Downloads.IS_PENDING, 0)
             context.contentResolver.update(uri, values, null, null)
-            "Downloads/UniPoint/$name"
+            "Downloads/DuoPad/$name"
         } catch (e: Exception) {
             context.contentResolver.delete(uri, null, null)
             throw e
         }
     } else {
         @Suppress("DEPRECATION")
-        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).resolve("UniPoint").apply { mkdirs() }
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).resolve("DuoPad").apply { mkdirs() }
         val target = File(dir, name)
         source.copyTo(target, overwrite = true)
         target.absolutePath
