@@ -78,6 +78,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     @Volatile private var snapshotAdb: Dadb?=null
     private var snapshotPreview: ImageView?=null
     private var lastVideoSampleHash:Int?=null
+    // Set by the visibility watchdog when it decides the current profile is black.
+    // Read by stream() so the next profile starts even if the old socket read is stuck.
+    @Volatile private var pendingBlackRetry:String?=null
     private var topControls:LinearLayout?=null
     private var leftControls:LinearLayout?=null
     private var rightControls:LinearLayout?=null
@@ -375,6 +378,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                                 "samples=${observation.blackSamples}, " +
                                 "durationMs=${observation.blackDurationMs}"
                             current.retryReason=reason
+                            pendingBlackRetry=reason
                             MirrorCrashRecorder.note(this,
                                 "AUTO_PROFILE_RETRY: $reason; switching compatibility profile " +
                                     "(DRM/protected playback cannot be bypassed)")
@@ -829,19 +833,51 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 "Preparing H.264 stream ${index+1}/${profiles.size}: " +
                     "${profile.maxSize}p/${profile.fps}fps control=${profile.control} " +
                     "encoder=${profile.encoder ?: "system-default"}")
-            val result = runCatching { streamAttempt(holder, ticket, profile) }
+            pendingBlackRetry = null
+            val attemptError = java.util.concurrent.atomic.AtomicReference<Throwable?>(null)
+            val attemptDone = java.util.concurrent.CountDownLatch(1)
+            // Each profile runs on its own thread. A black-output retry closes the session,
+            // but a socket read that is blocked may not return promptly. The fallback must
+            // not depend on that read unblocking, otherwise profile 2+ never starts
+            // (R8 log: AUTO_PROFILE_RETRY followed by no "Preparing ... 2/4").
+            thread(name = "doupad-video-attempt-${index + 1}", isDaemon = true) {
+                try {
+                    streamAttempt(holder, ticket, profile)
+                } catch (t: Throwable) {
+                    attemptError.set(t)
+                } finally {
+                    attemptDone.countDown()
+                }
+            }
+            var abandoned = false
+            while (generation.get() == ticket && attemptDone.count > 0L) {
+                if (pendingBlackRetry != null) {
+                    // Give the attempt a short window to unwind, then move on regardless.
+                    abandoned = !attemptDone.await(3, java.util.concurrent.TimeUnit.SECONDS)
+                    break
+                }
+                attemptDone.await(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+            }
             if (generation.get() != ticket) return
-            if (result.isSuccess) return
-            val error = result.exceptionOrNull()
-            val detail = error?.message ?: error?.javaClass?.simpleName ?: "Unknown video error"
+            val blackRetry = pendingBlackRetry
+            val error: Throwable? = attemptError.get()
+            // Only a clean end WITHOUT a black-output retry means this profile succeeded.
+            if (blackRetry == null && error == null && !abandoned) return
+            val detail = when {
+                blackRetry != null -> blackRetry
+                abandoned -> "previous profile did not stop in time"
+                else -> error?.message ?: error?.javaClass?.simpleName ?: "Unknown video error"
+            }
             android.util.Log.w("DuoPadVideo", "Video profile ${index + 1} failed: $detail", error)
-            if (error != null) failure(ticket, error)
+            MirrorCrashRecorder.note(this, "PROFILE_RESULT: ${index + 1}/${profiles.size}; $detail")
+            if (blackRetry == null && error != null) failure(ticket, error)
             if (index == profiles.lastIndex) {
                 show(ticket,
                     "All compatible profiles failed: $detail. If TV Home is still black, " +
                         "TV firmware or protected content may block screen capture."
                 )
             } else {
+                MirrorCrashRecorder.note(this, "PROFILE_NEXT: ${index + 2}/${profiles.size}")
                 show(ticket, "Trying the next video profile…")
                 Thread.sleep(450)
             }
@@ -1109,7 +1145,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                         if (index >= 0) {
                             codec.releaseOutputBuffer(index, true)
                             val outputFrames=renderedCount.incrementAndGet()
-                            if(outputFrames%200==0){
+                            if(outputFrames<=3 || outputFrames%60==0){
                                 MirrorCrashRecorder.note(this@DoupadMirrorActivity,
                                     "VIDEO_OUTPUT: rendered=$outputFrames, packets=${packetCount.get()}, " +
                                         "queued=${queuedCount.get()}, outputSize=${info.size}")

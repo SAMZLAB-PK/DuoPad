@@ -76,6 +76,7 @@ jobs:
           python3 verification/test_duopad_r6_features.py
           python3 verification/test_duopad_r7_features.py
           python3 verification/test_duopad_r8_features.py
+          python3 verification/test_duopad_r9_mirror_fallback.py
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
@@ -89,15 +90,15 @@ jobs:
           mkdir -p dist
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -f "$APK"
-          cp "$APK" 'dist/DuoPad-Pro-v0.17.0-R8-debug.apk'
-          sha256sum 'dist/DuoPad-Pro-v0.17.0-R8-debug.apk' | tee 'dist/SHA256SUMS.txt'
+          cp "$APK" 'dist/DuoPad-Pro-v0.17.0-R9-debug.apk'
+          sha256sum 'dist/DuoPad-Pro-v0.17.0-R9-debug.apk' | tee 'dist/SHA256SUMS.txt'
 
       - name: Upload DOUPAD APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DuoPad-Pro-v0.17.0-R8-debug
+          name: DuoPad-Pro-v0.17.0-R9-debug
           path: |
-            dist/DuoPad-Pro-v0.17.0-R8-debug.apk
+            dist/DuoPad-Pro-v0.17.0-R9-debug.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
