@@ -87,11 +87,25 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     // Manual encoder switching must wait for the previous decoder to be released.
     private val activeVideoAttempt = AtomicReference<Thread?>(null)
     private val manualSwitchInProgress = AtomicBoolean(false)
+    private val exitRequested = AtomicBoolean(false)
     @Volatile private var lastVisibleVideoAtMs:Long=0L
     private var topControls:LinearLayout?=null
     private var leftControls:LinearLayout?=null
     private var rightControls:LinearLayout?=null
     private var bottomControls:LinearLayout?=null
+
+    /** Do not interrupt an active Gradle worker-style stream wait via shutdownNow().
+     * A previous release could throw uncaught InterruptedException from await()
+     * after the user pressed X, which explains the crash timing in the R11 log.
+     */
+    private fun requestMirrorExit() {
+        if (!exitRequested.compareAndSet(false, true)) return
+        val ticket = generation.incrementAndGet()
+        MirrorCrashRecorder.note(this, "MIRROR_EXIT_REQUESTED: ticket=$ticket")
+        surfaceStartHandler.removeCallbacksAndMessages(null)
+        session?.close()
+        finish()
+    }
 
     private fun checkpoint(ticket: Int, name: String) {
         stage = name
@@ -673,7 +687,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             bar.addView(button,dims)
         }
         val header=bar(false)
-        val back=remoteButton("‹"){finish()}
+        val back=remoteButton("‹"){requestMirrorExit()}
         val audio=remoteButton(if(muted)"🔇" else "♪"){
             muted=!muted
             session?.audioTrack?.setVolume(if(muted)0f else 1f)
@@ -686,7 +700,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
         val shot=remoteButton("▣"){saveScreenshot()}
-        val close=remoteButton("×"){finish()}
+        val close=remoteButton("×"){requestMirrorExit()}
         val headerButtons=mutableListOf(back,audio,rotate,shot)
         if(intent.getBooleanExtra("aceconn_mode",false)){
             headerButtons.add(remoteButton(if(snapshotMode)"LIVE" else "SHOT"){
@@ -848,6 +862,11 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         session?.close()
     }
 
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        requestMirrorExit()
+    }
+
     override fun onDestroy() {
         snapshotMode=false
         snapshotAdb?.let { adb -> thread(isDaemon=true){runCatching{adb.close()}} }
@@ -856,9 +875,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         generation.incrementAndGet()
         session?.close()
         surfaceStartHandler.removeCallbacksAndMessages(null)
-        inputWorker.shutdownNow()
-        worker.shutdownNow()
-        MirrorCrashRecorder.finish(this, "Mirror Activity onDestroy")
+        // shutdownNow() interrupts CountDownLatch.await()/Thread.sleep() in
+        // stream(), potentially crashing this process right after X closes.
+        // generation increments + session.close() already stop active work;
+        // shutdown() rejects new tasks without injecting unchecked interrupts.
+        inputWorker.shutdown()
+        worker.shutdown()
+        MirrorCrashRecorder.finish(this, "Mirror Activity onDestroy; graceful shutdown")
         super.onDestroy()
     }
 
@@ -883,15 +906,18 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         ).let { all -> all.drop(aceconnEncoderIndex.coerceIn(0,all.lastIndex)) +
             all.take(aceconnEncoderIndex.coerceIn(0,all.lastIndex)) }
         else if(smoothMode) listOf(
-            VideoProfile(640,12,750_000,true,false),
-            VideoProfile(720,15,1_050_000,true,false)
+            // Video-only by default: Mi TV can handle smooth capture (confirmed
+            // by the user's atvTools test). Keep resolution moderate to avoid
+            // the TV's encoder falling behind while increasing FPS to 30.
+            VideoProfile(720,30,2_400_000,true,false),
+            VideoProfile(640,24,1_350_000,true,false)
         ) else if(withAudio) listOf(
             VideoProfile(960,24,2_000_000,true,true),
             VideoProfile(720,15,1_200_000,true,true)
         ) else listOf(
-            // Default uses fewer TV encoder resources than old 960p/24fps.
-            VideoProfile(720,15,1_000_000,true,false),
-            VideoProfile(640,12,750_000,true,false)
+            // Normal TV Home / app navigation should not be limited to 12 fps.
+            VideoProfile(720,24,1_800_000,true,false),
+            VideoProfile(640,20,1_100_000,true,false)
         )
         MirrorCrashRecorder.note(this,
             "STREAM_MODE: ${if(aceconnMode)"TV_BOX_COMPATIBILITY" else if(smoothMode)"SMOOTH_VIDEO_ONLY" else if(withAudio)"AUDIO_HIGH_QUALITY" else "STANDARD_LOW_LOAD"}; " +
@@ -926,10 +952,22 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             while (generation.get() == ticket && attemptDone.count > 0L) {
                 if (pendingBlackRetry != null) {
                     // Give the attempt a short window to unwind, then move on regardless.
-                    abandoned = !attemptDone.await(3, java.util.concurrent.TimeUnit.SECONDS)
+                    abandoned = try {
+                        !attemptDone.await(3, java.util.concurrent.TimeUnit.SECONDS)
+                    } catch (_: InterruptedException) {
+                        MirrorCrashRecorder.note(this, "STREAM_WORKER_INTERRUPTED_DURING_RETRY: ticket=$ticket")
+                        Thread.currentThread().interrupt()
+                        return
+                    }
                     break
                 }
-                attemptDone.await(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                try {
+                    attemptDone.await(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                } catch (_: InterruptedException) {
+                    MirrorCrashRecorder.note(this, "STREAM_WORKER_INTERRUPTED: ticket=$ticket; safe exit")
+                    Thread.currentThread().interrupt()
+                    return
+                }
             }
             if (generation.get() != ticket) return
             if(abandoned){
@@ -960,7 +998,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             } else {
                 MirrorCrashRecorder.note(this, "PROFILE_NEXT: ${index + 2}/${profiles.size}")
                 show(ticket, "Trying the next video profile…")
-                Thread.sleep(450)
+                try {
+                    Thread.sleep(450)
+                } catch (_: InterruptedException) {
+                    MirrorCrashRecorder.note(this, "STREAM_WORKER_INTERRUPTED_BETWEEN_PROFILES: ticket=$ticket")
+                    Thread.currentThread().interrupt()
+                    return
+                }
             }
         }
     }
@@ -1200,6 +1244,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             val configCount = AtomicInteger(0)
             val queuedCount = AtomicInteger(0)
             val renderedCount = AtomicInteger(0)
+            var fpsWindowStartedMs = android.os.SystemClock.elapsedRealtime()
+            var fpsWindowFrames = 0
             checkpoint(ticket, "Waiting for first decoded video frame")
             // A readable codec header is NOT proof that a single H.264 frame
             // was produced. Abort and try a second profile instead of hanging.
@@ -1231,12 +1277,31 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                                     MirrorCrashRecorder.note(this@DoupadMirrorActivity,
                                         "DECODER_FORMAT_CHANGED: $newFormat")
                                 }
-                                if(result>=0) codec.releaseOutputBuffer(result,true)
+                                if(result>=0) {
+                                    // The scrcpy packet PTS comes from the TV's clock.
+                                    // `render=true` on modern Android uses that timestamp,
+                                    // which is NOT synchronized with this phone and can cause
+                                    // the Surface to display frames late or irregularly.
+                                    // Use the phone's local monotonic time for live preview.
+                                    codec.releaseOutputBuffer(result, System.nanoTime())
+                                }
                                 result
                             }
                         } ?: break
                         if (index >= 0) {
                             val outputFrames=renderedCount.incrementAndGet()
+                            fpsWindowFrames++
+                            val measuredAtMs=android.os.SystemClock.elapsedRealtime()
+                            val windowDurationMs=measuredAtMs-fpsWindowStartedMs
+                            if(windowDurationMs >= 5000L){
+                                val measuredFps=(fpsWindowFrames*1000f/windowDurationMs)
+                                MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                    "VIDEO_FPS: decoded=${"%.1f".format(java.util.Locale.US,measuredFps)}, " +
+                                        "target=${profile.fps}, total=$outputFrames, " +
+                                        "packets=${packetCount.get()}, queued=${queuedCount.get()}, ticket=$ticket")
+                                fpsWindowStartedMs=measuredAtMs
+                                fpsWindowFrames=0
+                            }
                             if(outputFrames<=3 || outputFrames%60==0){
                                 MirrorCrashRecorder.note(this@DoupadMirrorActivity,
                                     "VIDEO_OUTPUT: rendered=$outputFrames, packets=${packetCount.get()}, " +

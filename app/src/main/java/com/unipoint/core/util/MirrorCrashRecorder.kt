@@ -75,7 +75,11 @@ object MirrorCrashRecorder {
         }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            if (armed.get() || preferences.getBoolean(ACTIVE, false)) {
+            // The mirror Activity disarms onDestroy(), but a stale video worker
+            // can still throw immediately afterward. Capture its stack trace too.
+            val mirrorWorker = thread.name.startsWith("doupad-") ||
+                error.stackTrace.any { it.className.contains("DoupadMirrorActivity") }
+            if (armed.get() || preferences.getBoolean(ACTIVE, false) || mirrorWorker) {
                 note(app, "UNCAUGHT_EXCEPTION thread=${thread.name}: ${error.javaClass.simpleName}: ${error.message}")
                 note(app, error.stackTraceToString().take(12000))
             }
