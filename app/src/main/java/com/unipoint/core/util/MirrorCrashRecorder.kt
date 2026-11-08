@@ -37,6 +37,14 @@ object MirrorCrashRecorder {
         }
     }
 
+    /** Delete historical app diagnostics without touching saved devices or ADB keys. */
+    fun clear(context: Context) {
+        synchronized(lock) {
+            runCatching { file(context).delete() }
+                .onFailure { Log.w("DouPadMirror", "Cannot clear mirror logs", it) }
+        }
+    }
+
     fun launch(context: Context, endpointPresent: Boolean) {
         armed.set(true)
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

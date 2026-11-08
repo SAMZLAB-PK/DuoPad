@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui.screens.android
 
 import android.content.Context
+import com.unipoint.presentation.ui.theme.DuoColors
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -152,7 +153,7 @@ fun AndroidMousePadScreen(
     }
 
     Scaffold(
-        containerColor = Color(0xFFFCFAF8),
+        containerColor = DuoColors.Background,
         topBar = {
             TopAppBar(
                 modifier = Modifier.pointerInput(airMouse) {
@@ -176,12 +177,12 @@ fun AndroidMousePadScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DuoColors.Background)
             )
         }
     ) { padding ->
         Box(
-            Modifier.fillMaxSize().background(Color(0xFFFCFAF8)).padding(padding)
+            Modifier.fillMaxSize().background(DuoColors.Background).padding(padding)
         ) {
             Column(
                 Modifier.fillMaxSize().padding(14.dp),
@@ -189,7 +190,7 @@ fun AndroidMousePadScreen(
             ) {
                 if (airMouse) {
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                        Text("Motion control", modifier=Modifier.weight(1f),color=Color(0xFF171717))
+                        Text("Motion control", modifier=Modifier.weight(1f),color=DuoColors.OnSurface)
                         Switch(checked=motionEnabled && gyro != null,
                             onCheckedChange={motionEnabled=it},enabled=gyro != null)
                     }
@@ -197,7 +198,7 @@ fun AndroidMousePadScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF2EFEB))
+                    colors = CardDefaults.cardColors(containerColor = DuoColors.SurfaceMid)
                 ) {
                     Box(
                         Modifier.fillMaxSize()
@@ -230,7 +231,7 @@ fun AndroidMousePadScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = DuoColors.SurfaceMid)
                 ) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Pointer speed", style = MaterialTheme.typography.labelMedium)

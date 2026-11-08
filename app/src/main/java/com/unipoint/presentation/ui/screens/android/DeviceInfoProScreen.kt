@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui.screens.android
 
 import androidx.compose.foundation.layout.*
+import com.unipoint.presentation.ui.theme.DuoColors
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -42,9 +43,9 @@ fun DeviceInfoProScreen(
         )
         loading = false
     }
-    val ink=Color(0xFF171717)
-    val muted=Color(0xFF77736F)
-    val teal=Color(0xFF181818)
+    val ink=DuoColors.OnSurface
+    val muted=DuoColors.OnSurfaceMuted
+    val teal=DuoColors.Accent
     @Composable fun Detail(key:String,label:String) {
         Column(Modifier.fillMaxWidth().padding(vertical=6.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
             Text(label,fontSize=11.sp,color=muted)
@@ -55,24 +56,24 @@ fun DeviceInfoProScreen(
         Card(
             modifier=Modifier.fillMaxWidth(),
             shape=RoundedCornerShape(16.dp),
-            colors=CardDefaults.cardColors(containerColor=Color.White)
+            colors=CardDefaults.cardColors(containerColor=DuoColors.SurfaceMid)
         ) {
             Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
                 Text(title,fontWeight=FontWeight.Bold,fontSize=15.sp,color=teal)
-                HorizontalDivider(color=Color(0xFFE6E1DC))
+                HorizontalDivider(color=DuoColors.Hairline)
                 body()
             }
         }
     }
 
     Scaffold(
-        containerColor=Color(0xFFFCFAF8),
+        containerColor=DuoColors.Background,
         topBar={
             TopAppBar(
                 title={Text("Device information",fontWeight=FontWeight.Bold)},
                 navigationIcon={IconButton(onClick=onBack){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back")}},
                 actions={IconButton(onClick={refresh++}){Icon(Icons.Default.Refresh,"Refresh")}},
-                colors=TopAppBarDefaults.topAppBarColors(containerColor=Color.White)
+                colors=TopAppBarDefaults.topAppBarColors(containerColor=DuoColors.Background)
             )
         }
     ) { pad ->
@@ -86,7 +87,7 @@ fun DeviceInfoProScreen(
                 OutlinedButton(onClick={refresh++}){Text("Retry")}
             }
             if(info.isNotEmpty()){
-                Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFF2EFEB)),shape=RoundedCornerShape(16.dp)){
+                Card(colors=CardDefaults.cardColors(containerColor=DuoColors.SurfaceHigh),shape=RoundedCornerShape(16.dp)){
                     Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically){
                         Icon(Icons.Default.Tv,null,Modifier.size(42.dp),tint=teal)
                         Spacer(Modifier.width(12.dp))

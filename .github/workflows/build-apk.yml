@@ -32,21 +32,6 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Apply Kotlin regex hotfix
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('app/src/main/java/com/unipoint/presentation/ui/DoupadShell.kt')
-          s = p.read_text(encoding='utf-8')
-          old = r'Regex("[\s/:]")'
-          new = r'Regex("[\\s/:]")'
-          if old not in s:
-              raise SystemExit('Expected broken Regex not found')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
-          PY
-          grep -n 'Regex' app/src/main/java/com/unipoint/presentation/ui/DoupadShell.kt
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -78,25 +63,17 @@ jobs:
           sdkmanager --list_installed | sed -n '1,160p'
 
       - name: Verify source contracts
+        shell: bash
         run: |
-          python3 verification/test_doupad_source.py
+          set -euo pipefail
+          python3 verification/test_android_resource_links.py
+          python3 verification/test_kotlin_source_escapes.py
           python3 verification/test_realtime_source.py
-          python3 verification/test_engine4_source.py
           python3 verification/test_samz_link_connectivity.py
           python3 verification/test_samz_link_v03.py
           python3 verification/test_samz_link_v04.py
-          python3 verification/test_doupad_pro_v05.py
-          python3 verification/test_doupad_pro_v06.py
-          python3 verification/test_doupad_pro_v07.py
-          python3 verification/test_doupad_pro_v08.py
-          python3 verification/test_doupad_pro_v09.py
-          python3 verification/test_doupad_pro_v10.py
-          python3 verification/test_doupad_pro_v11.py
-          python3 verification/test_doupad_pro_v12.py
-          python3 verification/test_doupad_pro_v13.py
-          python3 verification/test_doupad_pro_v14.py
-          python3 verification/test_doupad_pro_v15.py
-          python3 verification/test_doupad_pro_v16.py
+          python3 verification/test_duopad_r5_features.py
+          python3 verification/test_duopad_r6_features.py
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
@@ -110,15 +87,15 @@ jobs:
           mkdir -p dist
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -f "$APK"
-          cp "$APK" 'dist/DouPad-Pro-v0.16.0-aceconn-encoder-switch-debug.apk'
-          sha256sum 'dist/DouPad-Pro-v0.16.0-aceconn-encoder-switch-debug.apk' | tee 'dist/SHA256SUMS.txt'
+          cp "$APK" 'dist/DuoPad-Pro-v0.16.2-R6-debug.apk'
+          sha256sum 'dist/DuoPad-Pro-v0.16.2-R6-debug.apk' | tee 'dist/SHA256SUMS.txt'
 
       - name: Upload DOUPAD APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DouPad-Pro-v0.16.0-aceconn-encoder-switch-debug
+          name: DuoPad-Pro-v0.16.2-R6-debug
           path: |
-            dist/DouPad-Pro-v0.16.0-aceconn-encoder-switch-debug.apk
+            dist/DuoPad-Pro-v0.16.2-R6-debug.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

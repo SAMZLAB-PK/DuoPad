@@ -2,6 +2,7 @@ package com.unipoint.presentation.ui
 
 import android.app.Activity
 import com.unipoint.core.util.MirrorCrashRecorder
+import com.unipoint.core.util.VisibleVideoMonitor
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
@@ -53,10 +54,14 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var surface: SurfaceView
     private lateinit var status: TextView
     private val generation = AtomicInteger()
-    // After a phone rotation the previous ADB socket reader may still be unwinding.
-    // A second worker lets the new Surface start without waiting behind that reader.
-    // The generation token prevents stale workers from touching the new session.
-    private val worker = Executors.newFixedThreadPool(2)
+    // Stale ADB socket readers can remain blocked after Surface rotation.
+    // A fixed-size executor silently queued a new session behind these readers
+    // (SURFACE_CREATED without any subsequent STREAM_MODE in the user's log).
+    // The cached pool starts each new Surface promptly; generation and Session.close
+    // still prevent stale workers from updating the current video surface.
+    private val worker = Executors.newCachedThreadPool { command ->
+        Thread(command, "doupad-mirror-stream").apply { isDaemon = true }
+    }
     private val inputWorker = Executors.newSingleThreadExecutor()
     @Volatile private var session: Session? = null
     @Volatile private var stage: String = "Not started"
@@ -105,6 +110,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         var codec: MediaCodec? = null
         var displayWidth = 0
         var displayHeight = 0
+        val visibilityMonitor = VisibleVideoMonitor()
+        @Volatile var retryReason: String? = null
 
         @Synchronized fun close() {
             if (closed) return
@@ -209,7 +216,21 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        MirrorCrashRecorder.note(this,
+            "WINDOW_FOCUS: hasFocus=$hasFocus; generation=${generation.get()}; surfaceValid=${surface.holder.surface.isValid}")
         if (hasFocus) enterImmersive()
+    }
+
+    override fun onPause() {
+        MirrorCrashRecorder.note(this,
+            "ACTIVITY_PAUSE: generation=${generation.get()}; sessionOpen=${session?.closed == false}")
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::surface.isInitialized) MirrorCrashRecorder.note(this,
+            "ACTIVITY_RESUME: generation=${generation.get()}; surfaceValid=${surface.holder.surface.isValid}")
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -249,7 +270,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     private fun dp(value:Int):Int=(value*resources.displayMetrics.density+0.5f).toInt()
     private fun remoteButton(label:String,action:()->Unit):TextView {
         val tile=GradientDrawable().apply{
-            setColor(0xDD383838.toInt());cornerRadius=dp(13).toFloat()
+            setColor(0xDD1F2531.toInt());cornerRadius=dp(13).toFloat()
         }
         return TextView(this).apply{
             text=label;textSize=20f;setTextColor(Color.WHITE)
@@ -276,47 +297,95 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
         }
     }
-    private fun sampleVisibleVideo(ticket:Int){
+    /** Keep observing visual output after the initial 7 seconds (R5 stopped too early). */
+    private fun scheduleVisibleVideoSample(ticket: Int, current: Session, delayMs: Long) {
+        surfaceStartHandler.postDelayed({
+            if (generation.get() == ticket && session === current && !current.closed &&
+                current.retryReason == null && surface.holder.surface.isValid) {
+                sampleVisibleVideo(ticket, current)
+            }
+        }, delayMs)
+    }
+
+    private fun sampleVisibleVideo(ticket:Int,current:Session){
+        if (generation.get()!=ticket || session !== current || current.closed) return
         if(surface.width<=0||surface.height<=0||!surface.holder.surface.isValid)return
         val image=Bitmap.createBitmap(48,27,Bitmap.Config.ARGB_8888)
         try{
             PixelCopy.request(surface,image,{result->
-                if(result==PixelCopy.SUCCESS){
-                    var dark=0
-                    var sampled=0
-                    for(y in 0 until image.height step 2){
-                        for(x in 0 until image.width step 2){
-                            val rgb=image.getPixel(x,y)
-                            val peak=maxOf(Color.red(rgb),Color.green(rgb),Color.blue(rgb))
-                            if(peak<18)dark++
-                            sampled++
+                try {
+                    if (generation.get()!=ticket || session !== current || current.closed) return@request
+                    if(result==PixelCopy.SUCCESS){
+                        var dark=0
+                        var sampled=0
+                        var fingerprint=1
+                        for(y in 0 until image.height step 2){
+                            for(x in 0 until image.width step 2){
+                                val rgb=image.getPixel(x,y)
+                                val peak=maxOf(Color.red(rgb),Color.green(rgb),Color.blue(rgb))
+                                if(peak<18)dark++
+                                sampled++
+                                fingerprint=31*fingerprint+rgb
+                            }
                         }
-                    }
-                    val ratio=if(sampled>0) dark*100/sampled else 0
-                    var fingerprint=1
-                    for(y in 0 until image.height step 2){
-                        for(x in 0 until image.width step 2){
-                            fingerprint=31*fingerprint+image.getPixel(x,y)
+                        val ratio=if(sampled>0) dark*100/sampled else 0
+                        val unchanged=lastVideoSampleHash==fingerprint
+                        lastVideoSampleHash=fingerprint
+                        val observation=current.visibilityMonitor.observe(
+                            ratio, fingerprint, android.os.SystemClock.elapsedRealtime())
+                        MirrorCrashRecorder.note(this,
+                            "VISIBLE_VIDEO_SAMPLE: blackPixels=$ratio%, pixelCopy=SUCCESS, " +
+                                "frameHash=${fingerprint.toUInt().toString(16)}, " +
+                                "sameAsPrevious=$unchanged, " +
+                                "blackSamples=${observation.blackSamples}, " +
+                                "blackDurationMs=${observation.blackDurationMs}, " +
+                                "stableBlackSamples=${observation.stableBlackSamples}, ticket=$ticket " +
+                                "(static scenes/DRM may also appear black)")
+                        if (observation.firstVisible || observation.recovered) {
+                            MirrorCrashRecorder.note(this,
+                                "VISIBLE_VIDEO_CONFIRMED: blackPixels=$ratio%, " +
+                                    "first=${observation.firstVisible}, recovered=${observation.recovered}")
                         }
+                        if (observation.visible) {
+                            // Do not declare a good picture merely because MediaCodec
+                            // produced output. Hide the status only after PixelCopy sees it.
+                            status.visibility=View.GONE
+                        } else if (observation.blackSamples >= 2) {
+                            status.visibility=View.VISIBLE
+                            status.text=if(intent.getBooleanExtra("aceconn_mode",false))
+                                "TV video is black; checking for recovery before changing encoder…"
+                            else "Decoder is active but video appears black. Try TV Box mode or TV Home."
+                        }
+                        if (intent.getBooleanExtra("aceconn_mode",false) &&
+                            observation.shouldRetry && current.retryReason==null) {
+                            val reason="BLACK_OUTPUT: persistent near-black PixelCopy " +
+                                "samples=${observation.blackSamples}, " +
+                                "durationMs=${observation.blackDurationMs}"
+                            current.retryReason=reason
+                            MirrorCrashRecorder.note(this,
+                                "AUTO_PROFILE_RETRY: $reason; switching compatibility profile " +
+                                    "(DRM/protected playback cannot be bypassed)")
+                            status.visibility=View.VISIBLE
+                            status.text="Video remains black; trying the next compatibility profile…"
+                            thread(name="doupad-black-output-retry",isDaemon=true) {
+                                current.close()
+                            }
+                        }
+                    } else {
+                        MirrorCrashRecorder.note(this,
+                            "VISIBLE_VIDEO_SAMPLE: PixelCopy result=$result ticket=$ticket")
                     }
-                    val unchanged=lastVideoSampleHash==fingerprint
-                    lastVideoSampleHash=fingerprint
-                    MirrorCrashRecorder.note(this,
-                        "VISIBLE_VIDEO_SAMPLE: blackPixels=$ratio%, pixelCopy=SUCCESS, " +
-                            "frameHash=${fingerprint.toUInt().toString(16)}, " +
-                            "sameAsPrevious=$unchanged, ticket=$ticket " +
-                            "(static scenes/DRM may also appear black)")
-                    if(ratio>=99 && intent.getBooleanExtra("aceconn_mode",false)){
-                        status.visibility=View.VISIBLE
-                        status.text="Video appears black. On the TV Home screen try ENC to change encoder."
-                    }
-                }else MirrorCrashRecorder.note(this,
-                    "VISIBLE_VIDEO_SAMPLE: PixelCopy result=$result ticket=$ticket")
-                image.recycle()
+                } finally {
+                    image.recycle()
+                    if (generation.get()==ticket && session===current && !current.closed &&
+                        current.retryReason==null) scheduleVisibleVideoSample(ticket,current,2500L)
+                }
             },Handler(Looper.getMainLooper()))
         }catch(error:Exception){
             image.recycle()
             MirrorCrashRecorder.note(this,"VISIBLE_VIDEO_SAMPLE_ERROR: ${error.message}")
+            if (generation.get()==ticket && session===current && !current.closed)
+                scheduleVisibleVideoSample(ticket,current,3000L)
         }
     }
 
@@ -381,7 +450,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
     private fun nextTvBoxEncoder(){
         if(!intent.getBooleanExtra("aceconn_mode",false))return
-        val names=listOf("c2.android.avc.encoder","OMX.google.h264.encoder","system-default")
+        val names=listOf("system-default","c2.android.avc.encoder","OMX.google.h264.encoder","software-decoder")
         aceconnEncoderIndex=(aceconnEncoderIndex+1)%names.size
         val ticket=generation.incrementAndGet()
         MirrorCrashRecorder.note(this,
@@ -399,8 +468,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 MirrorCrashRecorder.note(this,
                     "MANUAL_ENCODER_SWITCH_SKIPPED: stale surface ticket=$ticket")
             } else {
-                runCatching { worker.execute { stream(surface.holder,ticket) } }
-                    .onFailure {
+                runCatching {
+                    worker.execute {
+                        MirrorCrashRecorder.note(this,
+                            "WORKER_STARTED: manual encoder switch, ticket=$ticket")
+                        stream(surface.holder,ticket)
+                    }
+                }.onFailure {
                         MirrorCrashRecorder.note(this,
                             "MANUAL_ENCODER_SWITCH_ERROR: ${it.javaClass.simpleName}: ${it.message}")
                         show(ticket,"Cannot switch encoder: ${it.message}")
@@ -565,8 +639,15 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             if(generation.get()!=ticket || isFinishing || isDestroyed || !holder.surface.isValid){
                 MirrorCrashRecorder.note(this,"SURFACE_START_SKIPPED: stale ticket=$ticket")
             }else{
-                runCatching { worker.execute { stream(holder,ticket) } }
-                    .onFailure {
+                MirrorCrashRecorder.note(this,
+                    "SURFACE_START_DISPATCHED: ticket=$ticket, surfaceValid=${holder.surface.isValid}")
+                runCatching {
+                    worker.execute {
+                        MirrorCrashRecorder.note(this,
+                            "WORKER_STARTED: surface ticket=$ticket")
+                        stream(holder,ticket)
+                    }
+                }.onFailure {
                         MirrorCrashRecorder.note(this,
                             "WORKER_START_FAILED: ${it.javaClass.simpleName}: ${it.message}")
                         show(ticket,"Mirror surface unavailable: ${it.message}")
@@ -576,6 +657,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        MirrorCrashRecorder.note(this,
+            "SURFACE_CHANGED: generation=${generation.get()}, size=${width}x${height}, format=$format")
         // Leave SurfaceView unchanged: resizing while the codec is attached
         // can destroy the Surface and abort the scrcpy session.
     }
@@ -599,7 +682,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     private data class VideoProfile(
         val maxSize: Int, val fps: Int, val bitRate: Int, val control: Boolean, val audio: Boolean,
-        val encoder: String? = null
+        val encoder: String? = null, val softwareDecoder: Boolean = false
     )
 
     private fun stream(holder: SurfaceHolder, ticket: Int) {
@@ -607,18 +690,23 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         // firmware streams video reliably but rejects the second abstract socket.
         val aceconnMode=intent.getBooleanExtra("aceconn_mode",false)
         val profiles=if(aceconnMode) listOf(
-            // Test available H.264 encoders individually; a decoded black frame
-            // is not proof of valid captured video on vendor TV boxes.
+            // Start with the vendor/system encoder, then alternate software
+            // encoders. The old forced c2.android profile produced black frames
+            // on the reported Aceconn box (valid codec, audio but no picture).
+            VideoProfile(720,15,1_500_000,true,true),
             VideoProfile(720,15,1_200_000,true,true,"c2.android.avc.encoder"),
-            VideoProfile(640,12,900_000,true,true,"OMX.google.h264.encoder"),
-            VideoProfile(720,15,1_200_000,true,true)
-        ).drop(aceconnEncoderIndex) else listOf(
+            VideoProfile(640,12,950_000,true,true,"OMX.google.h264.encoder"),
+            // Last attempt also avoids the device audio socket and uses the
+            // phone's software H.264 decoder to isolate decoder incompatibility.
+            VideoProfile(640,12,950_000,true,false,null,true)
+        ).let { all -> all.drop(aceconnEncoderIndex.coerceIn(0, all.lastIndex)) + all.take(aceconnEncoderIndex.coerceIn(0, all.lastIndex)) } else listOf(
             VideoProfile(960, 24, 2_000_000, true, true),
             VideoProfile(720, 15, 1_200_000, true, false)
         )
         MirrorCrashRecorder.note(this,
             "STREAM_MODE: ${if(aceconnMode)"TV_BOX_COMPATIBILITY" else "STANDARD"}; " +
-                "profileCount=${profiles.size}; selectedIndex=${if(aceconnMode)aceconnEncoderIndex else 0}")
+                "profileCount=${profiles.size}; selectedIndex=${if(aceconnMode)aceconnEncoderIndex else 0}; " +
+                "blackOutputRecovery=${if(aceconnMode) "two-sample-auto-retry" else "off"}")
         for ((index, profile) in profiles.withIndex()) {
             if (generation.get() != ticket) return
             checkpoint(ticket,
@@ -634,10 +722,11 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             if (error != null) failure(ticket, error)
             if (index == profiles.lastIndex) {
                 show(ticket,
-                    "Live video unavailable: $detail. Open Mirror diagnostics for packet and encoder details."
+                    "All compatible profiles failed: $detail. If TV Home is still black, " +
+                        "TV firmware or protected content may block screen capture."
                 )
             } else {
-                show(ticket, "No first frame; trying alternate stream profile (720p)…")
+                show(ticket, "Video not visible; trying alternate compatibility profile…")
                 Thread.sleep(450)
             }
         }
@@ -842,7 +931,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 }
             }
 
-            val softwareRequested = intent.getBooleanExtra("safe_decoder", false)
+            val softwareRequested = profile.softwareDecoder || intent.getBooleanExtra("safe_decoder", false)
             checkpoint(ticket, "Initializing ${if (softwareRequested) "software-first" else "automatic"} H.264 decoder (${width}×${height})")
             val format = MediaFormat.createVideoFormat("video/avc", width, height)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !softwareRequested) {
@@ -915,17 +1004,14 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                                         "queued=${queuedCount.get()}, output=${renderedCount.get()}")
                                 runOnUiThread {
                                     if(generation.get()==ticket) {
-                                        status.visibility=View.GONE
-                                        // Multiple low-resolution visual samples distinguish
-                                        // sustained black content from transient transitions.
-                                        // Do not automatically restart for black samples:
-                                        // black TV scenes and DRM may be legitimate.
-                                        listOf(2500L,6500L,11000L).forEach { delay ->
-                                            surfaceStartHandler.postDelayed({
-                                                if(generation.get()==ticket && !current.closed)
-                                                    sampleVisibleVideo(ticket)
-                                            },delay)
-                                        }
+                                        status.visibility=View.VISIBLE
+                                        status.text="Decoder started; verifying visible video…"
+                                        // Keep watching throughout the session. R5 sampled
+                                        // only three times, missing later black transitions.
+                                        MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                            "VIDEO_VISIBILITY_WATCHDOG: continuous 2.5s samples; " +
+                                                "graceful black-output retry in TV Box mode")
+                                        scheduleVisibleVideoSample(ticket,current,1500L)
                                     }
                                 }
                             }
@@ -969,6 +1055,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 )
                 queuedCount.incrementAndGet()
             }
+            if (generation.get() == ticket && current.retryReason != null) {
+                throw IOException("${current.retryReason}")
+            }
             if (generation.get() == ticket && !firstFrame.get()) {
                 throw IOException("No decoded frame: packets=${packetCount.get()}, " +
                     "config=${configCount.get()}, queued=${queuedCount.get()}, " +
@@ -976,7 +1065,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
         } catch (e: Exception) {
             if (generation.get() == ticket) {
-                throw IOException("Video pipeline: ${e.message ?: e.javaClass.simpleName}", e)
+                val why=own?.retryReason ?: e.message ?: e.javaClass.simpleName
+                throw IOException("Video pipeline: $why", e)
             }
         } finally {
             own?.close()

@@ -15,8 +15,8 @@ android {
         applicationId = "com.samz.samzlink"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.16.0-aceconn-encoder-switch-beta"
+        versionCode = 18
+        versionName = "0.16.2-aceconn-visibility-r6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 

@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui.screens
 
 import androidx.compose.animation.core.RepeatMode
+import com.unipoint.presentation.ui.theme.DuoColors
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -241,7 +242,7 @@ private fun ProDeviceBackground(content: @Composable () -> Unit) {
     Box(
         Modifier.fillMaxSize().background(
             Brush.verticalGradient(
-                listOf(Color(0xFF050B14), Color(0xFF081827), Color(0xFF07111F))
+                listOf(DuoColors.Background, DuoColors.SurfaceLow, DuoColors.Background)
             )
         )
     ) {
@@ -274,7 +275,7 @@ private fun HeroCard(androidCount: Int, pcCount: Int, scanning: Boolean) {
                     ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Devices, null, tint = Color(0xFF04131A))
+                    Icon(Icons.Default.Devices, null, tint = DuoColors.OnAccent)
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {

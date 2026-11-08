@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui.screens.android
 
 import android.content.ClipData
+import com.unipoint.presentation.ui.theme.DuoColors
 import android.content.ClipboardManager
 import android.content.Context
 import android.app.ActivityManager
@@ -15,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -29,10 +31,11 @@ import java.io.File
 fun MirrorDiagnosticsScreen(onBack:()->Unit) {
     val context=LocalContext.current
     var refresh by remember { mutableIntStateOf(0) }
+    var confirmClear by remember { mutableStateOf(false) }
     val diagnostics=remember(refresh) {
         val breadcrumbs = runCatching {
             File(context.filesDir,"doupad_mirror_diagnostics.txt").readText().takeLast(15000)
-        }.getOrDefault("No local mirror startup marker. Please verify v0.8 is installed.")
+        }.getOrDefault("No local mirror logs yet.")
         val previousExits = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             runCatching {
                 val manager = context.getSystemService(ActivityManager::class.java)
@@ -60,25 +63,48 @@ fun MirrorDiagnosticsScreen(onBack:()->Unit) {
                 navigationIcon={IconButton(onClick=onBack){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back")}},
                 actions={
                     IconButton(onClick={refresh++}){Icon(Icons.Default.Refresh,"Refresh")}
+                    IconButton(onClick={confirmClear=true}){
+                        Icon(Icons.Default.DeleteOutline,"Clear old mirror logs")
+                    }
                 }
             )
         }
     ) { padding ->
+        if(confirmClear) {
+            AlertDialog(
+                onDismissRequest={confirmClear=false},
+                title={Text("Clear mirror logs?")},
+                text={Text("Deletes the app's local mirror event log. Android system process-exit history is maintained by the OS and cannot be deleted here.")},
+                confirmButton={TextButton(onClick={
+                    com.unipoint.core.util.MirrorCrashRecorder.clear(context)
+                    refresh++
+                    confirmClear=false
+                }){Text("Clear logs")}},
+                dismissButton={TextButton(onClick={confirmClear=false}){Text("Cancel")}}
+            )
+        }
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp),
             verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Text("Shows startup breadcrumbs, encoder/decoder events and Android process exits, even when the video screen closes unexpectedly. Data stays on this phone.",
-                style=MaterialTheme.typography.bodySmall,color=Color(0xFF667587))
-            Button(onClick={
-                val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("DouPad mirror diagnostics",diagnostics))
-            },modifier=Modifier.fillMaxWidth()){
-                Icon(Icons.Default.ContentCopy,null)
-                Spacer(Modifier.width(8.dp))
-                Text("Copy diagnostic log")
+                style=MaterialTheme.typography.bodySmall,color=DuoColors.OnSurfaceMuted)
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
+                Button(onClick={
+                    val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("DouPad mirror diagnostics",diagnostics))
+                },modifier=Modifier.weight(1f)){
+                    Icon(Icons.Default.ContentCopy,null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Copy log")
+                }
+                OutlinedButton(onClick={confirmClear=true},modifier=Modifier.weight(1f)) {
+                    Icon(Icons.Default.DeleteOutline,null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Clear old logs")
+                }
             }
-            Surface(modifier=Modifier.fillMaxSize(),color=Color(0xFF111A27),shape=MaterialTheme.shapes.medium) {
+            Surface(modifier=Modifier.fillMaxSize(),color=DuoColors.Console,shape=MaterialTheme.shapes.medium) {
                 Text(diagnostics,
-                    color=Color.White,
+                    color=DuoColors.ConsoleText,
                     fontFamily=FontFamily.Monospace,
                     style=MaterialTheme.typography.bodySmall,
                     modifier=Modifier.verticalScroll(rememberScrollState()).padding(12.dp))

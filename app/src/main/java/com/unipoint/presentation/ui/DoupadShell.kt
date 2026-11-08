@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui
 
 import android.Manifest
+import com.unipoint.presentation.ui.theme.DuoColors
 import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.content.pm.PackageManager
@@ -38,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.unipoint.R
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -49,19 +51,22 @@ import com.unipoint.presentation.viewmodel.MainViewModel
 import com.unipoint.presentation.ui.screens.android.*
 import com.unipoint.presentation.ui.screens.pc.KeyboardScreen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 // Source of truth: user-approved Concept 04 reference (warm cream + pure ink).
-private val Teal = Color(0xFF171717)
-private val Ink = Color(0xFF121212)
-private val Muted = Color(0xFF595653)
-private val Border = Color(0xFFE3DEDA)
-private val Pale = Color(0xFFF0ECE9)
-private val Background = Color(0xFFF7F4F1)
-private val Paper = Color(0xFFFCF9F6)
-private val Online = Color(0xFF0CCB37)
+private val Accent: Color @Composable get() = DuoColors.Accent
+private val OnAccent: Color @Composable get() = DuoColors.OnAccent
+private val Teal: Color @Composable get() = DuoColors.Accent
+private val Ink: Color @Composable get() = DuoColors.OnSurface
+private val Muted: Color @Composable get() = DuoColors.OnSurfaceMuted
+private val Border: Color @Composable get() = DuoColors.Hairline
+private val Pale: Color @Composable get() = DuoColors.SurfaceHigh
+private val Background: Color @Composable get() = DuoColors.Background
+private val Paper: Color @Composable get() = DuoColors.SurfaceMid
+private val Online: Color get() = DuoColors.Success
 private data class Target(val name:String,val endpoint:String,val pc:Boolean,val customName:String?=null)
 private fun readTargets(context:Context):List<Target> = runCatching {
     val a=JSONArray(context.getSharedPreferences("doupad",0).getString("targets","[]"))
@@ -74,7 +79,11 @@ private fun saveTargets(context:Context,items:List<Target>) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
+fun DoupadShell(
+    appearance: String = "light",
+    onAppearanceChange: (String) -> Unit = {},
+    vm: MainViewModel = hiltViewModel()
+) {
     val context=LocalContext.current
     val state by vm.uiState.collectAsStateWithLifecycle()
     val scope=rememberCoroutineScope()
@@ -91,7 +100,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     var pcTransport by rememberSaveable { mutableStateOf("bluetooth") }
     var localError by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("All") }
-    var scanFilter by rememberSaveable { mutableStateOf("Android TV") }
+    var scanFilter by rememberSaveable { mutableStateOf("All") }
     var remoteMode by rememberSaveable { mutableIntStateOf(0) }
     var connectRequested by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Target?>(null) }
@@ -100,6 +109,11 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     var airMouseSelected by rememberSaveable { mutableStateOf(false) }
     var pendingQuickAction by rememberSaveable { mutableStateOf("Tools") }
     var targets by remember { mutableStateOf(readTargets(context)) }
+    var pendingSaveTarget by remember { mutableStateOf<Target?>(null) }
+    var lastPromptedEndpoint by remember { mutableStateOf<String?>(null) }
+    var automaticReconnect by remember { mutableStateOf(true) }
+    var reconnectAttempts by remember { mutableIntStateOf(0) }
+
     val status=state.connectionStatus
     val connected=status.state==ConnectionState.CONNECTED
     fun message(text:String){scope.launch { snack.showSnackbar(text) }}
@@ -182,11 +196,13 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     }
     fun openNearby(action:String) {
         pendingQuickAction=action
-        scanFilter="Android TV"
+        scanFilter="All"
         page=4
         vm.scanNearby()
     }
     fun open(target:Target) {
+        automaticReconnect=targets.any { it.endpoint==target.endpoint }
+        reconnectAttempts=0
         if(page != 4) pendingQuickAction="Tools"
         if(connected && status.address==target.endpoint){applySelectedAction();return}
         ip=target.endpoint.substringBefore(':')
@@ -206,16 +222,49 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
             applySelectedAction()
         }
     }
-    LaunchedEffect(status.state,status.address) { if(connected) {
-        val endpoint=status.address ?: ""
-        if(endpoint.isNotBlank() && ":" in endpoint) {
-            val previous=targets.firstOrNull { it.endpoint==endpoint }
-            val actualName=status.deviceName?.takeIf { it.isNotBlank() } ?: previous?.name ?: endpoint
-            val next=Target(actualName,endpoint,state.mode==AppMode.PC,previous?.customName)
-            targets=listOf(next)+targets.filterNot { it.endpoint==endpoint }
-            saveTargets(context,targets)
+    // A successful connection is NOT silently added to Saved. Ask once, and only
+    // automatically reconnect entries the user explicitly approved earlier.
+    LaunchedEffect(status.state,status.address) {
+        if (connected) {
+            reconnectAttempts=0
+            val endpoint=status.address.orEmpty()
+            if (endpoint.isNotBlank() && ':' in endpoint) {
+                val previous=targets.firstOrNull { it.endpoint==endpoint }
+                if (previous!=null) {
+                    targets=listOf(previous)+targets.filterNot { it.endpoint==endpoint }
+                    saveTargets(context,targets)
+                } else if (lastPromptedEndpoint != endpoint) {
+                    lastPromptedEndpoint=endpoint
+                    pendingSaveTarget=Target(
+                        status.deviceName?.takeIf { it.isNotBlank() } ?: endpoint,
+                        endpoint,state.mode==AppMode.PC
+                    )
+                    dialog="saveDevice"
+                }
+            }
         }
-    } }
+    }
+    // Best-effort reconnect for explicitly saved, previously authorized devices.
+    // Bounded retries avoid an endless loop for an offline host or revoked ADB key.
+    LaunchedEffect(status.state,targets.firstOrNull()?.endpoint,automaticReconnect) {
+        val target=targets.firstOrNull()
+        if (automaticReconnect && target!=null &&
+            status.state in listOf(ConnectionState.DISCONNECTED, ConnectionState.ERROR) &&
+            reconnectAttempts < 3) {
+            val attempt=reconnectAttempts
+            delay(if(attempt==0) 1300L else 2500L * (attempt+1))
+            if (!automaticReconnect || connected || targets.firstOrNull()?.endpoint != target.endpoint) return@LaunchedEffect
+            reconnectAttempts++
+            MirrorCrashRecorder.note(context,
+                "SAVED_DEVICE_RECONNECT: ${target.endpoint}; attempt=$reconnectAttempts/3")
+            val host=target.endpoint.substringBefore(':')
+            val port=target.endpoint.substringAfter(':',if(target.pc) "27845" else "5555").toIntOrNull()
+            if(port!=null) {
+                if(target.pc) vm.connectNetwork(host,port)
+                else vm.connectAndroidIp("$host:$port")
+            }
+        }
+    }
     LaunchedEffect(state.snackbarMessage) { state.snackbarMessage?.let { snack.showSnackbar(it);vm.clearSnackbar() } }
     LaunchedEffect(dialog,pc,pcTransport) {
         if(dialog=="connect" && pc && pcTransport=="wifi") vm.scanPc()
@@ -266,14 +315,14 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                             if(target=="tools"){page=3;detail=null}
                             else if(requireTv())detail=target
                         },horizontalAlignment=Alignment.CenterHorizontally){
-                            Surface(color=if(page==3&&target=="tools")Ink else Color.Transparent,
+                            Surface(color=if(page==3&&target=="tools")DuoColors.AccentContainer else Color.Transparent,
                                 shape=CircleShape,modifier=Modifier.width(56.dp).height(29.dp)){
                                 Box(contentAlignment=Alignment.Center){
                                     Icon(icon,label,Modifier.size(21.dp),
-                                        tint=if(page==3&&target=="tools")Color.White else Ink)
+                                        tint=if(page==3&&target=="tools")DuoColors.OnAccentContainer else Muted)
                                 }
                             }
-                            Text(label,color=Ink,fontSize=11.sp)
+                            Text(label,color=if(page==3&&target=="tools")Ink else Muted,fontSize=11.sp,fontWeight=if(page==3&&target=="tools")FontWeight.SemiBold else FontWeight.Normal)
                         }
                     }
                 }
@@ -319,7 +368,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                             verticalAlignment=Alignment.CenterVertically,
                             horizontalArrangement=Arrangement.spacedBy(9.dp)
                         ) {
-                            Surface(color=Color(0xFFE7E3E0),shape=CircleShape,
+                            Surface(color=DuoColors.SurfaceHighest,shape=CircleShape,
                                 modifier=Modifier.size(32.dp)) {
                                 Box(contentAlignment=Alignment.Center) {
                                     Icon(Icons.Default.Wifi,"Wi-Fi",Modifier.size(20.dp),tint=Ink)
@@ -359,7 +408,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                                 Text("No saved devices yet",modifier=Modifier.weight(1f),
                                     fontSize=12.sp,color=Muted)
                                 Button(onClick={openNearby("Remote")},
-                                    colors=ButtonDefaults.buttonColors(containerColor=Ink),
+                                    colors=ButtonDefaults.buttonColors(containerColor=Accent),
                                     shape=RoundedCornerShape(9.dp),
                                     contentPadding=PaddingValues(horizontal=10.dp)){
                                     Text("Add device",fontSize=10.sp)
@@ -398,11 +447,11 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                                     modifier=Modifier.height(31.dp),
                                     shape=RoundedCornerShape(9.dp),
                                     contentPadding=PaddingValues(horizontal=11.dp),
-                                    colors=ButtonDefaults.buttonColors(containerColor=Ink)
+                                    colors=ButtonDefaults.buttonColors(containerColor=Accent)
                                 ){
                                     Text(if(live)"Open" else "Connect",
                                         fontSize=10.sp,fontWeight=FontWeight.Bold,
-                                        color=Color.White,maxLines=1)
+                                        color=OnAccent,maxLines=1)
                                 }
                                 Box {
                                     IconButton(
@@ -463,7 +512,25 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 4->{
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
                         horizontalArrangement=Arrangement.SpaceBetween){
-                        Text("DOUPAD",fontSize=25.sp,fontWeight=FontWeight.Black,color=Ink)
+                        Text("DuoPad",fontSize=29.sp,fontWeight=FontWeight.Bold,color=Ink,
+                            fontFamily=FontFamily.Serif,modifier=Modifier.weight(1f))
+                        Surface(shape=RoundedCornerShape(22.dp),color=Pale,
+                            border=BorderStroke(1.dp,Border)) {
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                listOf(Triple("light","Light",Icons.Default.WbSunny),
+                                       Triple("dark","Dark",Icons.Default.DarkMode)).forEach { (choice,label,icon) ->
+                                    val selected=appearance==choice || (appearance=="bento" && choice=="light")
+                                    TextButton(onClick={onAppearanceChange(choice)},
+                                        colors=ButtonDefaults.textButtonColors(
+                                            containerColor=if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent),
+                                        contentPadding=PaddingValues(horizontal=8.dp,vertical=1.dp)) {
+                                        Icon(icon,null,Modifier.size(16.dp),tint=Ink)
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(label,fontSize=11.sp,color=Ink)
+                                    }
+                                }
+                            }
+                        }
                         IconButton(onClick={vm.scanNearby()}){Icon(Icons.Default.Refresh,"Refresh",tint=Ink)}
                     }
                     Text("Last connected",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink)
@@ -486,11 +553,15 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     }
                     Text("Select device",fontSize=18.sp,fontWeight=FontWeight.Bold,
                         color=Ink,modifier=Modifier.padding(top=9.dp))
-                    Text("Android TV, PC or previously authorized devices. Scanning does not request debugging access.",
+                    Text("Choose a device to connect. Save after connecting for faster access; saved devices retry automatically.",
                         fontSize=12.sp,color=Muted)
                     Row(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-                        listOf("Android TV","All","Saved","PC").forEach { type ->
-                            FilterChip(selected=scanFilter==type,onClick={scanFilter=type},label={Text(type,fontSize=11.sp)})
+                        listOf("All","Android TV","PC","Saved").forEach { type ->
+                            FilterChip(selected=scanFilter==type,onClick={scanFilter=type},
+                                colors=FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor=MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor=MaterialTheme.colorScheme.onSecondaryContainer),
+                                label={Text(type,fontSize=11.sp)})
                         }
                     }
                     if(state.isScanning || state.isScanningPc){
@@ -500,15 +571,37 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     val androidFound=state.androidDevices.distinctBy { it.id }
                     val pcFound=state.pcDevices.distinctBy { it.id }
                     val savedTargets=targets.distinctBy { it.endpoint }
-                    fun targetButton(target:Target,subtitle:String,tint:Color=Teal): @Composable ()->Unit = {
-                        OutlinedButton(onClick={open(target)},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp)){
-                            Icon(if(target.pc)Icons.Default.Computer else Icons.Default.Tv,null,Modifier.size(27.dp),tint=tint)
-                            Spacer(Modifier.width(12.dp))
+                    val defaultTargetTint=Teal
+                    fun targetButton(target:Target,subtitle:String,tint:Color=defaultTargetTint): @Composable ()->Unit = {
+                        val isSaved=targets.any { it.endpoint==target.endpoint }
+                        OutlinedButton(onClick={open(target)},modifier=Modifier.fillMaxWidth(),
+                            shape=RoundedCornerShape(17.dp),
+                            border=BorderStroke(1.dp,Border),
+                            contentPadding=PaddingValues(horizontal=12.dp,vertical=9.dp)) {
+                            Icon(if(target.pc)Icons.Default.Computer else Icons.Default.Tv,null,Modifier.size(25.dp),tint=tint)
+                            Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(target.customName ?: target.name,maxLines=1,fontWeight=FontWeight.SemiBold)
+                                Text(target.customName ?: target.name,maxLines=1,fontWeight=FontWeight.SemiBold,color=Ink)
                                 Text(subtitle,fontSize=11.sp,color=Muted,maxLines=1)
+                                Text(if(isSaved) "★ Saved · automatic reconnect" else "Connect, then save this device",
+                                    fontSize=10.sp,color=if(isSaved)DuoColors.Secondary else Muted,maxLines=1)
                             }
-                            Icon(Icons.Default.ChevronRight,null)
+                            IconButton(onClick={
+                                if(isSaved) {
+                                    targets=targets.filterNot{it.endpoint==target.endpoint}
+                                    saveTargets(context,targets)
+                                    message("Removed from saved devices")
+                                } else if(connected && status.address==target.endpoint) {
+                                    targets=listOf(target)+targets.filterNot{it.endpoint==target.endpoint}
+                                    saveTargets(context,targets)
+                                    message("Device saved")
+                                } else message("Connect first, then save the authorized device")
+                            },modifier=Modifier.size(37.dp)) {
+                                Icon(if(isSaved) Icons.Default.Star else Icons.Default.StarBorder,
+                                    if(isSaved) "Remove saved device" else "Save device",
+                                    tint=if(isSaved)DuoColors.Secondary else Muted)
+                            }
+                            Icon(Icons.Default.ChevronRight,null,tint=Teal)
                         }
                     }
                     if(scanFilter=="Saved"){
@@ -547,6 +640,22 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                     }
                     OutlinedButton(onClick={pc=false;port="5555";dialog="connect"},modifier=Modifier.fillMaxWidth()){
                         Icon(Icons.Default.Add,null);Text("  Connect by IP")
+                    }
+                    Surface(onClick={detail="mirrorLog"},modifier=Modifier.fillMaxWidth(),
+                        shape=RoundedCornerShape(19.dp),color=Pale,border=BorderStroke(1.dp,Border)) {
+                        Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Icon(Icons.Default.BugReport,"Diagnostics",tint=Ink)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Diagnostic logs",fontWeight=FontWeight.Bold,color=Ink)
+                                Text("Review or clear mirror logs",fontSize=11.sp,color=Muted)
+                            }
+                            TextButton(onClick={dialog="clearLogs"},contentPadding=PaddingValues(4.dp)) {
+                                Icon(Icons.Default.DeleteOutline,"Clear old diagnostic logs",Modifier.size(18.dp),tint=Teal)
+                                Spacer(Modifier.width(3.dp))
+                                Text("Clear",fontSize=11.sp,color=Teal)
+                            }
+                        }
                     }
                 }
                 1->{
@@ -596,15 +705,15 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                         Text("Color keys",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Ink)
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
                             listOf(
-                                Triple("Red",183,Color(0xFFE84F59)),
-                                Triple("Green",184,Color(0xFF35A46B)),
-                                Triple("Yellow",185,Color(0xFFE8BE38)),
-                                Triple("Blue",186,Color(0xFF4483DE))
+                                Triple("Red",183,Color(0xFFE5646E)),
+                                Triple("Green",184,Color(0xFF3FBF86)),
+                                Triple("Yellow",185,Color(0xFFE9C25A)),
+                                Triple("Blue",186,Color(0xFF5B8DEF))
                             ).forEach { (label,code,tint) ->
                                 Surface(onClick={key(code)},modifier=Modifier.weight(1f).height(37.dp),
                                     color=tint,shape=RoundedCornerShape(9.dp)){
                                     Box(contentAlignment=Alignment.Center){
-                                        Text(label,color=if(label=="Yellow")Ink else Color.White,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                                        Text(label,color=if(label=="Yellow")OnAccent else Color.White,fontSize=11.sp,fontWeight=FontWeight.Bold)
                                     }
                                 }
                             }
@@ -781,15 +890,15 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 5->{
                     Title("Settings","Control your connected devices and preferences.")
                     Surface(shape=RoundedCornerShape(15.dp),
-                        border=BorderStroke(1.dp,Border),color=Color.White){
+                        border=BorderStroke(1.dp,Border),color=Paper){
                         Column(Modifier.padding(horizontal=15.dp,vertical=14.dp),
                             verticalArrangement=Arrangement.spacedBy(7.dp)){
                             Row(verticalAlignment=Alignment.CenterVertically,
                                 horizontalArrangement=Arrangement.spacedBy(11.dp)){
-                                Surface(Modifier.size(38.dp),color=Ink,
+                                Surface(Modifier.size(38.dp),color=Accent,
                                     shape=RoundedCornerShape(10.dp)){
                                     Box(contentAlignment=Alignment.Center){
-                                        Text("D",color=Color.White,fontSize=23.sp,fontWeight=FontWeight.Black)
+                                        Text("D",color=OnAccent,fontSize=23.sp,fontWeight=FontWeight.Black)
                                     }
                                 }
                                 Column{
@@ -798,12 +907,19 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                                         fontSize=11.sp,color=Muted)
                                 }
                             }
-                            Text("Light • Warm White • Minimal",
+                            Text("Appearance · ${when(appearance){"dark"->"Midnight Graphite";"bento"->"Bento Clay";else->"Handmade Light"}}",
                                 fontSize=11.sp,color=Muted)
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                listOf("light" to "Light", "dark" to "Dark", "bento" to "Bento Clay")
+                                    .forEach { (preset,label) ->
+                                        FilterChip(selected=appearance==preset,
+                                            onClick={onAppearanceChange(preset)},label={Text(label,fontSize=11.sp)})
+                                    }
+                            }
                         }
                     }
                     Surface(shape=RoundedCornerShape(15.dp),
-                        border=BorderStroke(1.dp,Border),color=Color.White){
+                        border=BorderStroke(1.dp,Border),color=Paper){
                         Column{
                             ToolRow("Devices","Discover and connect TVs or PCs",Icons.Default.Devices){
                                 openNearby("Remote")
@@ -819,7 +935,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                             if(connected){
                                 HorizontalDivider(color=Border)
                                 ToolRow("Disconnect","End current device connection",Icons.Default.LinkOff){
-                                    vm.disconnect();message("Disconnected")
+                                    automaticReconnect=false;vm.disconnect();message("Disconnected")
                                 }
                             }
                         }
@@ -834,11 +950,18 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
             }
         }
     }
-    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Color.White,title={Text(when(dialog){"connect"->"Add a device";"connectingSaved"->"Connecting to device";"rename"->"Rename device";"keyboard"->"Keyboard";"settings"->"DouPad Pro";"clearSaved"->"Clear saved devices?";"clearCache"->"Clear app caches?";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
+    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Pale,title={Text(when(dialog){"connect"->"Add a device";"saveDevice"->"Save connected device?";"connectingSaved"->"Connecting to device";"rename"->"Rename device";"keyboard"->"Keyboard";"settings"->"DouPad Pro";"clearSaved"->"Clear saved devices?";"clearLogs"->"Clear old diagnostic logs?";"clearCache"->"Clear app caches?";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
             when(dialog){
                 "clearSaved"->{
                     Text("Remove all saved TV and PC entries from this phone? Existing device authorization on your TV is not changed.",color=Muted,fontSize=13.sp)
+                }
+                "clearLogs"->Text("Delete local mirror event logs? Android's system exit history will remain available.",fontSize=13.sp,color=Muted)
+                "saveDevice"->{
+                    Text("Save ${pendingSaveTarget?.name.orEmpty()} (${pendingSaveTarget?.endpoint.orEmpty()}) for automatic reconnect on the same network?",
+                        fontSize=13.sp,color=Ink)
+                    Text("Only save devices you own or are authorized to control. ADB authorization and PC host security are still required.",
+                        fontSize=12.sp,color=Muted)
                 }
                 "rename"->{
                     Text(renameTarget?.endpoint ?: "",fontSize=12.sp,color=Muted)
@@ -873,7 +996,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                             FilterChip(selected=pcTransport=="wifi",onClick={pcTransport="wifi"},label={Text("Wi-Fi")})
                         }
                         if(pcTransport=="bluetooth") {
-                            Surface(shape=RoundedCornerShape(14.dp),color=Color(0xFFEFFAFA),border=BorderStroke(1.dp,Teal.copy(alpha=.35f))) {
+                            Surface(shape=RoundedCornerShape(14.dp),color=DuoColors.AccentSoft,border=BorderStroke(1.dp,Teal.copy(alpha=.35f))) {
                                 Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(9.dp)) {
                                         Icon(Icons.Default.Bluetooth,null,tint=Teal)
@@ -996,7 +1119,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 }
                 "keyboard"->{OutlinedTextField(command,{command=it},label={Text("Text to send")});Text("Focus a text field on your device first.",fontSize=12.sp,color=Muted)}
                 "shell"->{OutlinedTextField(command,{command=it},label={Text("ADB command")});Button(onClick={scope.launch{output="Running…";output=vm.executeAdbAwait(command)}}){Text("Run")};if(output.isNotBlank())Text(output,fontSize=12.sp)}
-                "settings"->{Text("DouPad Pro ${BuildConfig.VERSION_NAME}");Text("Android TV / Box + Windows remote and transfer controller.",fontSize=12.sp);if(connected)TextButton(onClick={vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
+                "settings"->{Text("DouPad Pro ${BuildConfig.VERSION_NAME}");Text("Android TV / Box + Windows remote and transfer controller.",fontSize=12.sp);if(connected)TextButton(onClick={automaticReconnect=false;vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
                 "power"->{listOf("Sleep" to "input keyevent 223","Wake" to "input keyevent 224","Restart" to "reboot","Power off" to "reboot -p").forEach{(label,cmd)->OutlinedButton(onClick={command=cmd;dialog="Confirm power action"},modifier=Modifier.fillMaxWidth()){Text(label)}}}
                 "Confirm power action"->Text("Run '$command' on ${status.deviceName}? Restart/shutdown disconnects the device.")
                 "gamepad"->{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("A" to 96,"B" to 97,"X" to 99,"Y" to 100).forEach{(label,code)->OutlinedButton(onClick={key(code)},contentPadding=PaddingValues(12.dp)){Text(label)}}};Pad(::key);Text("Key-based game controls; compatibility depends on the game.",fontSize=11.sp,color=Muted)}
@@ -1010,6 +1133,16 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
     },confirmButton={TextButton(onClick={
         when(dialog){
             "clearSaved"->{targets=emptyList();saveTargets(context,targets);dialog=null}
+            "clearLogs"->{MirrorCrashRecorder.clear(context);dialog=null;message("Old mirror logs cleared") }
+            "saveDevice"->{
+                pendingSaveTarget?.let { target ->
+                    targets=listOf(target)+targets.filterNot { it.endpoint==target.endpoint }
+                    saveTargets(context,targets)
+                    automaticReconnect=true
+                }
+                pendingSaveTarget=null
+                dialog=null
+            }
             "rename"->{
                 val target=renameTarget
                 if(target!=null){
@@ -1028,7 +1161,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
                 if(pc && pcTransport=="bluetooth") startBluetoothDirect()
                 else {
                     val p=port.toIntOrNull()
-                    if(ip.isBlank()||ip.contains(Regex("[\s/:]"))||p==null||p !in 1..65535) localError="Enter a valid host and port."
+                    if(ip.isBlank()||ip.contains(Regex("""[\s/:]"""))||p==null||p !in 1..65535) localError="Enter a valid host and port."
                     else { localError="";connectRequested=true;if(pc)vm.connectNetwork(ip,p,pin.ifBlank{null}) else vm.connectAndroidIp("$ip:$p") }
                 }
             }
@@ -1037,7 +1170,7 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
             "clearCache"->{showCommand("Clear cache","pm trim-caches 1G")}
             else->dialog=null
         }
-    }){Text(when(dialog){"rename"->"Save";"clearSaved"->"Clear";"clearCache"->"Confirm";"connectingSaved"->if(status.state==ConnectionState.CONNECTING)"Connecting…" else "Retry";"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else if(connectRequested&&status.state==ConnectionState.ERROR)"Retry" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
+    }){Text(when(dialog){"rename"->"Save";"saveDevice"->"Save device";"clearLogs"->"Clear";"clearSaved"->"Clear";"clearCache"->"Confirm";"connectingSaved"->if(status.state==ConnectionState.CONNECTING)"Connecting…" else "Retry";"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else if(connectRequested&&status.state==ConnectionState.ERROR)"Retry" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
 }
 
 @Composable private fun ConceptAction(
@@ -1062,8 +1195,8 @@ fun DoupadShell(vm:MainViewModel=hiltViewModel()) {
 }
 @Composable private fun Title(title:String,subtitle:String){Column(verticalArrangement=Arrangement.spacedBy(6.dp)){Text(title,fontSize=26.sp,fontWeight=FontWeight.Bold,color=Ink,letterSpacing=(-0.6).sp);Text(subtitle,fontSize=13.sp,color=Muted)}}
 @Composable private fun Hint(text:String){Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){Icon(Icons.Default.Info,null,Modifier.size(16.dp),tint=Muted);Text(text,fontSize=11.sp,color=Muted)}}
-@Composable private fun Quick(label:String,icon:ImageVector,modifier:Modifier=Modifier,action:()->Unit){Surface(onClick=action,modifier=modifier,shape=RoundedCornerShape(13.dp),color=Color.White,border=BorderStroke(1.dp,Border)){Column(Modifier.padding(horizontal=4.dp,vertical=18.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(10.dp)){Icon(icon,null,Modifier.size(26.dp),tint=Teal);Text(label,fontSize=11.sp,fontWeight=FontWeight.Medium,maxLines=1)}}}
-@Composable private fun RoundKey(label:String,icon:ImageVector,action:()->Unit){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(6.dp)){Surface(onClick=action,shape=CircleShape,color=Color.White,border=BorderStroke(1.dp,Border)){Box(Modifier.size(55.dp),contentAlignment=Alignment.Center){Icon(icon,label,tint=if(label=="Power")Color(0xFFDA3444) else Ink)}};Text(label,fontSize=11.sp,color=Muted)}}
-@Composable private fun Pad(key:(Int)->Unit){BoxWithConstraints(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center){val size=minOf(maxWidth,264.dp);Box(Modifier.size(size).clip(CircleShape).background(Pale).border(1.dp,Border,CircleShape)){IconButton(onClick={key(19)},modifier=Modifier.align(Alignment.TopCenter).padding(top=12.dp)){Icon(Icons.Default.KeyboardArrowUp,"Up")};IconButton(onClick={key(20)},modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=12.dp)){Icon(Icons.Default.KeyboardArrowDown,"Down")};IconButton(onClick={key(21)},modifier=Modifier.align(Alignment.CenterStart).padding(start=12.dp)){Icon(Icons.Default.KeyboardArrowLeft,"Left")};IconButton(onClick={key(22)},modifier=Modifier.align(Alignment.CenterEnd).padding(end=12.dp)){Icon(Icons.Default.KeyboardArrowRight,"Right")};Surface(onClick={key(23)},modifier=Modifier.align(Alignment.Center).size(88.dp),shape=CircleShape,color=Teal){Box(contentAlignment=Alignment.Center){Text("OK",fontSize=20.sp,color=Color.White,fontWeight=FontWeight.SemiBold)}}}}}
-@Composable private fun ToolTile(label:String,subtitle:String,icon:ImageVector,modifier:Modifier,action:()->Unit){Surface(onClick=action,modifier=modifier,shape=RoundedCornerShape(15.dp),border=BorderStroke(1.dp,Border),color=Color.White){Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Icon(icon,null,tint=Teal,modifier=Modifier.size(26.dp));Icon(Icons.Default.ChevronRight,null,tint=Muted,modifier=Modifier.size(16.dp))};Text(label,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(subtitle,fontSize=10.sp,color=Muted)}}}
+@Composable private fun Quick(label:String,icon:ImageVector,modifier:Modifier=Modifier,action:()->Unit){Surface(onClick=action,modifier=modifier,shape=RoundedCornerShape(13.dp),color=Paper,border=BorderStroke(1.dp,Border)){Column(Modifier.padding(horizontal=4.dp,vertical=18.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(10.dp)){Icon(icon,null,Modifier.size(26.dp),tint=Teal);Text(label,fontSize=11.sp,fontWeight=FontWeight.Medium,maxLines=1)}}}
+@Composable private fun RoundKey(label:String,icon:ImageVector,action:()->Unit){Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(6.dp)){Surface(onClick=action,shape=CircleShape,color=Paper,border=BorderStroke(1.dp,Border)){Box(Modifier.size(55.dp),contentAlignment=Alignment.Center){Icon(icon,label,tint=if(label=="Power")DuoColors.Danger else Ink)}};Text(label,fontSize=11.sp,color=Muted)}}
+@Composable private fun Pad(key:(Int)->Unit){BoxWithConstraints(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center){val size=minOf(maxWidth,264.dp);Box(Modifier.size(size).clip(CircleShape).background(Pale).border(1.dp,Border,CircleShape)){IconButton(onClick={key(19)},modifier=Modifier.align(Alignment.TopCenter).padding(top=12.dp)){Icon(Icons.Default.KeyboardArrowUp,"Up")};IconButton(onClick={key(20)},modifier=Modifier.align(Alignment.BottomCenter).padding(bottom=12.dp)){Icon(Icons.Default.KeyboardArrowDown,"Down")};IconButton(onClick={key(21)},modifier=Modifier.align(Alignment.CenterStart).padding(start=12.dp)){Icon(Icons.Default.KeyboardArrowLeft,"Left")};IconButton(onClick={key(22)},modifier=Modifier.align(Alignment.CenterEnd).padding(end=12.dp)){Icon(Icons.Default.KeyboardArrowRight,"Right")};Surface(onClick={key(23)},modifier=Modifier.align(Alignment.Center).size(88.dp),shape=CircleShape,color=Teal){Box(contentAlignment=Alignment.Center){Text("OK",fontSize=20.sp,color=OnAccent,fontWeight=FontWeight.SemiBold)}}}}}
+@Composable private fun ToolTile(label:String,subtitle:String,icon:ImageVector,modifier:Modifier,action:()->Unit){Surface(onClick=action,modifier=modifier,shape=RoundedCornerShape(15.dp),border=BorderStroke(1.dp,Border),color=Paper){Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Icon(icon,null,tint=Teal,modifier=Modifier.size(26.dp));Icon(Icons.Default.ChevronRight,null,tint=Muted,modifier=Modifier.size(16.dp))};Text(label,fontWeight=FontWeight.Bold,fontSize=13.sp);Text(subtitle,fontSize=10.sp,color=Muted)}}}
 @Composable private fun ToolRow(label:String,subtitle:String,icon:ImageVector,action:()->Unit){Row(Modifier.fillMaxWidth().clickable(onClick=action).padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(13.dp)){Icon(icon,null,Modifier.size(25.dp));Column(Modifier.weight(1f)){Text(label,fontSize=13.sp,fontWeight=FontWeight.SemiBold);Text(subtitle,fontSize=11.sp,color=Muted)};Icon(Icons.Default.ChevronRight,null,Modifier.size(16.dp),tint=Muted)}}

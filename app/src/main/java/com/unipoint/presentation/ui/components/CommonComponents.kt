@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import com.unipoint.presentation.ui.theme.DuoColors
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,10 +59,10 @@ fun ModeSwitcher(
 fun ConnectionStatusCard(status: ConnectionStatus) {
     val bgColor by animateColorAsState(
         targetValue = when (status.state) {
-            ConnectionState.CONNECTED -> Color(0xFF1B5E20).copy(alpha = 0.3f)
-            ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> Color(0xFFF57F17).copy(alpha = 0.25f)
-            ConnectionState.ERROR -> Color(0xFFB71C1C).copy(alpha = 0.3f)
-            else -> MaterialTheme.colorScheme.surfaceVariant
+            ConnectionState.CONNECTED -> DuoColors.Success.copy(alpha = 0.14f)
+            ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> DuoColors.Warning.copy(alpha = 0.14f)
+            ConnectionState.ERROR -> DuoColors.Danger.copy(alpha = 0.14f)
+            else -> MaterialTheme.colorScheme.surfaceContainer
         },
         animationSpec = tween(400), label = "connBg"
     )
@@ -80,9 +81,9 @@ fun ConnectionStatusCard(status: ConnectionStatus) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             when (status.state) {
-                ConnectionState.CONNECTED -> Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF69F0AE), modifier = Modifier.size(28.dp))
+                ConnectionState.CONNECTED -> Icon(Icons.Default.CheckCircle, null, tint = DuoColors.Success, modifier = Modifier.size(28.dp))
                 ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> CircularProgressIndicator(Modifier.size(26.dp), strokeWidth = 3.dp)
-                ConnectionState.ERROR -> Icon(Icons.Default.Error, null, tint = Color(0xFFFF5252), modifier = Modifier.size(28.dp))
+                ConnectionState.ERROR -> Icon(Icons.Default.Error, null, tint = DuoColors.Danger, modifier = Modifier.size(28.dp))
                 else -> Icon(Icons.Default.LinkOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
             }
 
@@ -112,7 +113,7 @@ fun ConnectionStatusCard(status: ConnectionStatus) {
                     }
                 }
                 status.errorMessage?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF8A80))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = DuoColors.Danger)
                 }
             }
         }

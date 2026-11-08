@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui.screens.android
 
 import android.content.Context
+import com.unipoint.presentation.ui.theme.DuoColors
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -124,10 +125,10 @@ fun AdbShellScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp),
                 shape = RoundedCornerShape(14.dp),
-                color = Color(0xFF101821)
+                color = DuoColors.Console
             ) {
                 Text(
-                    output, color = Color(0xFFE8F0F5), fontFamily = FontFamily.Monospace,
+                    output, color = DuoColors.ConsoleText, fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp, modifier = Modifier.padding(14.dp)
                 )
             }
@@ -197,8 +198,8 @@ fun AndroidGamepadScreen(
     onBack: () -> Unit,
     viewModel: MainViewModel = hiltViewModel()
 ) {
-    val ink = Color(0xFF121212)
-    val buttonColor = Color(0xFF393939)
+    val ink = DuoColors.OnAccent
+    val buttonColor = DuoColors.SurfaceHigh
     fun key(code:Int) = viewModel.executeAdb(AdbCommand.InputKey(code))
 
     @Composable fun PadButton(text:String,code:Int,modifier:Modifier=Modifier) {
@@ -206,7 +207,7 @@ fun AndroidGamepadScreen(
             onClick={key(code)},modifier=modifier,
             shape=RoundedCornerShape(14.dp),color=buttonColor
         ) { Box(contentAlignment=Alignment.Center) {
-            Text(text,color=Color.White,fontWeight=FontWeight.Bold,fontSize=13.sp)
+            Text(text,color=DuoColors.OnSurface,fontWeight=FontWeight.Bold,fontSize=13.sp)
         } }
     }
     @Composable fun Stick(label:String,code:Int,size: androidx.compose.ui.unit.Dp) {
@@ -227,9 +228,9 @@ fun AndroidGamepadScreen(
             },contentAlignment=Alignment.Center
         ){
             Surface(Modifier.fillMaxSize(),shape=CircleShape,color=buttonColor,
-                border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFF858585))){}
+                border=androidx.compose.foundation.BorderStroke(1.dp,DuoColors.Outline)){}
             Surface(onClick={key(code)},modifier=Modifier.size(size*0.52f),
-                shape=CircleShape,color=Color.White){
+                shape=CircleShape,color=DuoColors.Accent){
                 Box(contentAlignment=Alignment.Center){
                     Text(label,color=ink,fontSize=28.sp,fontWeight=FontWeight.Bold)
                 }
@@ -247,9 +248,9 @@ fun AndroidGamepadScreen(
                 Triple("▶",22,Alignment.CenterEnd)
             ).forEach { (label,code,pos) ->
                 Surface(onClick={key(code)},modifier=Modifier.align(pos).size(side),
-                    shape=RoundedCornerShape(11.dp),color=Color(0xFF6A6A6A)){
+                    shape=RoundedCornerShape(11.dp),color=DuoColors.SurfaceHighest){
                     Box(contentAlignment=Alignment.Center){
-                        Text(label,fontSize=14.sp,color=Color.White)
+                        Text(label,fontSize=14.sp,color=DuoColors.OnSurface)
                     }
                 }
             }
@@ -267,21 +268,21 @@ fun AndroidGamepadScreen(
                 Surface(onClick={key(code)},modifier=Modifier.align(pos).size(d),
                     shape=CircleShape,color=buttonColor){
                     Box(contentAlignment=Alignment.Center){
-                        Text(label,color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                        Text(label,color=DuoColors.OnSurface,fontSize=19.sp,fontWeight=FontWeight.Bold)
                     }
                 }
             }
         }
     }
     Scaffold(
-        containerColor=Color(0xFF141414),
+        containerColor=DuoColors.Background,
         topBar={
             TopAppBar(
-                title={Text("Gamepad",fontWeight=FontWeight.Bold,color=Color.White)},
+                title={Text("Gamepad",fontWeight=FontWeight.Bold,color=DuoColors.OnSurface)},
                 navigationIcon={IconButton(onClick=onBack){
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back",tint=Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back",tint=DuoColors.OnSurface)
                 }},
-                colors=TopAppBarDefaults.topAppBarColors(containerColor=Color(0xFF141414))
+                colors=TopAppBarDefaults.topAppBarColors(containerColor=DuoColors.Background)
             )
         }
     ){pad->
@@ -339,7 +340,7 @@ fun AndroidGamepadScreen(
                     PadButton("R3",107,Modifier.width(70.dp).height(36.dp))
                 }
                 Text("Directional stick emulation uses Android keycodes; true analog HID requires gamepad support.",
-                    fontSize=10.sp,color=Color.LightGray,maxLines=2)
+                    fontSize=10.sp,color=DuoColors.OnSurfaceMuted,maxLines=2)
             }
         }
     }

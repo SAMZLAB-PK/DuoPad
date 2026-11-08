@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#171717</color>
-    <color name="ic_launcher_foreground">#FFFFFF</color>
-    <color name="primary">#181818</color>
-    <color name="primary_dark">#121212</color>
-    <color name="accent">#181818</color>
+    <color name="duo_background">#FF0B0D12</color>
+    <!-- Adaptive launcher icon used by both regular and round icon XML. -->
+    <color name="ic_launcher_background">#FF0B0D12</color>
 </resources>

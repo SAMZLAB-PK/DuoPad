@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import com.unipoint.presentation.ui.navigation.UniPointNavHost
@@ -28,18 +29,32 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // Warm-white Concept 04 requires dark, legible system-bar glyphs.
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
-        }
+        val appearancePrefs = getSharedPreferences("doupad", MODE_PRIVATE)
         setContent {
-            UniPointTheme {
+            var appearance by remember { mutableStateOf(
+                appearancePrefs.getString("appearance", "light") ?: "light"
+            ) }
+            val dark = appearance == "dark"
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+            UniPointTheme(appearance = appearance) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    DoupadShell()
+                    DoupadShell(
+                        appearance = appearance,
+                        onAppearanceChange = { newAppearance ->
+                            if (newAppearance in listOf("light", "dark", "bento")) {
+                                appearance = newAppearance
+                                appearancePrefs.edit().putString("appearance", newAppearance).apply()
+                            }
+                        }
+                    )
                 }
             }
         }

@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui.screens.android
 
 import androidx.compose.foundation.background
+import com.unipoint.presentation.ui.theme.DuoColors
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -55,7 +56,7 @@ fun AndroidRemoteScreen(
     ) { padding ->
         Box(
             Modifier.fillMaxSize().background(
-                Brush.verticalGradient(listOf(Color(0xFF050B14), Color(0xFF0A1B2A), Color(0xFF07111F)))
+                Brush.verticalGradient(listOf(DuoColors.Background, DuoColors.SurfaceLow, DuoColors.Background))
             )
         ) {
             Column(

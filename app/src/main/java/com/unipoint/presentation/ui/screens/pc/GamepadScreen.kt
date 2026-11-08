@@ -78,12 +78,12 @@ fun GamepadScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                GamepadButton("Y", Color(0xFFFFEB3B)) { }
+                GamepadButton("Y", Color(0xFFE9C25A)) { }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    GamepadButton("X", Color(0xFF2196F3)) { }
-                    GamepadButton("B", Color(0xFFF44336)) { }
+                    GamepadButton("X", Color(0xFF5B8DEF)) { }
+                    GamepadButton("B", Color(0xFFE5646E)) { }
                 }
-                GamepadButton("A", Color(0xFF4CAF50)) { }
+                GamepadButton("A", Color(0xFF3FBF86)) { }
             }
 
             // D-Pad
