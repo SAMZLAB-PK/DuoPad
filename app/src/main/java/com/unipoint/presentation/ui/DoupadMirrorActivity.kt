@@ -1,6 +1,7 @@
 package com.unipoint.presentation.ui
 
 import android.app.Activity
+import android.app.AlertDialog
 import com.unipoint.core.util.MirrorCrashRecorder
 import com.unipoint.core.util.VisibleVideoMonitor
 import android.content.pm.ActivityInfo
@@ -46,6 +47,7 @@ import dadb.Dadb
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
 import android.util.Log
@@ -81,6 +83,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     // Set by the visibility watchdog when it decides the current profile is black.
     // Read by stream() so the next profile starts even if the old socket read is stuck.
     @Volatile private var pendingBlackRetry:String?=null
+    // Never attach two MediaCodec instances to one SurfaceView concurrently.
+    // Manual encoder switching must wait for the previous decoder to be released.
+    private val activeVideoAttempt = AtomicReference<Thread?>(null)
+    @Volatile private var lastVisibleVideoAtMs:Long=0L
     private var topControls:LinearLayout?=null
     private var leftControls:LinearLayout?=null
     private var rightControls:LinearLayout?=null
@@ -363,6 +369,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                                     "first=${observation.firstVisible}, recovered=${observation.recovered}")
                         }
                         if (observation.visible) {
+                            lastVisibleVideoAtMs=android.os.SystemClock.elapsedRealtime()
                             // Do not declare a good picture merely because MediaCodec
                             // produced output. Hide the status only after PixelCopy sees it.
                             status.visibility=View.GONE
@@ -467,37 +474,65 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
     private fun nextTvBoxEncoder(){
         if(!intent.getBooleanExtra("aceconn_mode",false))return
+        // The Aceconn already shows software-decoded VLC video correctly. A
+        // manual switch during visible playback is optional and potentially
+        // disruptive, so require confirmation before closing a good stream.
+        val recentVisible=android.os.SystemClock.elapsedRealtime()-lastVisibleVideoAtMs < 5_000L
+        if(recentVisible){
+            AlertDialog.Builder(this)
+                .setTitle("Video is visible")
+                .setMessage("The current Aceconn mirror is showing picture. Switching the encoder may interrupt playback. Switch anyway?")
+                .setNegativeButton("Keep video",null)
+                .setPositiveButton("Switch"){_,_->switchTvBoxEncoderSafely()}
+                .show()
+        }else switchTvBoxEncoderSafely()
+    }
+
+    private fun switchTvBoxEncoderSafely(){
         val names=listOf("system-default","c2.android.avc.encoder","OMX.google.h264.encoder","software-decoder")
         aceconnEncoderIndex=(aceconnEncoderIndex+1)%names.size
         val ticket=generation.incrementAndGet()
         MirrorCrashRecorder.note(this,
             "MANUAL_ENCODER_SWITCH: selected=${names[aceconnEncoderIndex]}, ticket=$ticket")
         lastVideoSampleHash=null
+        lastVisibleVideoAtMs=0L
+        pendingBlackRetry=null
         status.visibility=View.VISIBLE
-        status.text="Switching video encoder to ${names[aceconnEncoderIndex]}…"
-        val current=session
-        // Closing the previous ADB and AudioTrack before opening replacement
-        // prevents overlapped video/audio streams and associated flicker.
-        current?.close()
-        surfaceStartHandler.postDelayed({
-            if(generation.get()!=ticket || isFinishing || isDestroyed ||
-                !surface.holder.surface.isValid){
-                MirrorCrashRecorder.note(this,
-                    "MANUAL_ENCODER_SWITCH_SKIPPED: stale surface ticket=$ticket")
-            } else {
-                runCatching {
-                    worker.execute {
-                        MirrorCrashRecorder.note(this,
-                            "WORKER_STARTED: manual encoder switch, ticket=$ticket")
+        status.text="Closing previous decoder before switching…"
+        val previous=session
+        // Do not close ADB on the main/UI thread. Then wait for the previous
+        // streamAttempt's FINALLY block to stop/release MediaCodec. A fixed
+        // 600-ms delay was unsafe: it could reconfigure the Surface while the
+        // old decoder was still using it, causing immediate profile failures.
+        thread(name="doupad-manual-switch-cleanup",isDaemon=true){
+            runCatching{previous?.close()}.onFailure{
+                MirrorCrashRecorder.note(this,"MANUAL_SWITCH_CLOSE_ERROR: ${it.javaClass.simpleName}")
+            }
+            val oldAttempt=activeVideoAttempt.get()
+            if(oldAttempt!=null && oldAttempt !== Thread.currentThread() && oldAttempt.isAlive){
+                oldAttempt.join(6_000L)
+            }
+            val stillActive=oldAttempt?.isAlive==true
+            if(stillActive){
+                MirrorCrashRecorder.note(this,"MANUAL_SWITCH_DEFERRED: old MediaCodec still active after 6s")
+                show(ticket,"Previous decoder is still closing. Exit Mirror and reopen before switching.")
+                return@thread
+            }
+            MirrorCrashRecorder.note(this,"MANUAL_SWITCH_CLEANUP_OK: prior decoder stopped")
+            runOnUiThread{
+                if(generation.get()!=ticket || isFinishing || isDestroyed || !surface.holder.surface.isValid){
+                    MirrorCrashRecorder.note(this,"MANUAL_ENCODER_SWITCH_SKIPPED: stale surface ticket=$ticket")
+                }else{
+                    runCatching{worker.execute{
+                        MirrorCrashRecorder.note(this,"WORKER_STARTED: manual encoder switch, ticket=$ticket")
                         stream(surface.holder,ticket)
-                    }
-                }.onFailure {
-                        MirrorCrashRecorder.note(this,
-                            "MANUAL_ENCODER_SWITCH_ERROR: ${it.javaClass.simpleName}: ${it.message}")
+                    }}.onFailure{
+                        MirrorCrashRecorder.note(this,"MANUAL_ENCODER_SWITCH_ERROR: ${it.javaClass.simpleName}: ${it.message}")
                         show(ticket,"Cannot switch encoder: ${it.message}")
                     }
+                }
             }
-        },600L)
+        }
     }
 
 
@@ -840,15 +875,18 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             // but a socket read that is blocked may not return promptly. The fallback must
             // not depend on that read unblocking, otherwise profile 2+ never starts
             // (R8 log: AUTO_PROFILE_RETRY followed by no "Preparing ... 2/4").
-            thread(name = "doupad-video-attempt-${index + 1}", isDaemon = true) {
+            val attemptThread=thread(name = "doupad-video-attempt-${index + 1}", isDaemon = true, start = false) {
                 try {
                     streamAttempt(holder, ticket, profile)
                 } catch (t: Throwable) {
                     attemptError.set(t)
                 } finally {
+                    activeVideoAttempt.compareAndSet(Thread.currentThread(),null)
                     attemptDone.countDown()
                 }
             }
+            activeVideoAttempt.set(attemptThread)
+            attemptThread.start()
             var abandoned = false
             while (generation.get() == ticket && attemptDone.count > 0L) {
                 if (pendingBlackRetry != null) {
@@ -859,6 +897,14 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 attemptDone.await(200, java.util.concurrent.TimeUnit.MILLISECONDS)
             }
             if (generation.get() != ticket) return
+            if(abandoned){
+                // Do not start another MediaCodec while a previous decoder
+                // still holds the same Surface. Prefer a safe failure to a
+                // crash or a chain of bogus profile errors.
+                MirrorCrashRecorder.note(this,"PROFILE_RETRY_DEFERRED: previous decoder still active")
+                show(ticket,"Old decoder has not released the surface. Close and reopen Mirror.")
+                return
+            }
             val blackRetry = pendingBlackRetry
             val error: Throwable? = attemptError.get()
             // Only a clean end WITHOUT a black-output retry means this profile succeeded.
@@ -1217,12 +1263,15 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
         } catch (e: Exception) {
             if (generation.get() == ticket) {
-                val why=own?.retryReason ?: e.message ?: e.javaClass.simpleName
+                val why=(own?.retryReason ?: e.message)?.takeIf{it.isNotBlank()}
+                    ?: "${e.javaClass.simpleName} during $stage"
+                MirrorCrashRecorder.note(this,"STREAM_EXCEPTION: ${e.javaClass.name}: $why; cause=${e.cause?.javaClass?.simpleName ?: "none"}")
                 throw IOException("Video pipeline: $why", e)
             }
         } finally {
             own?.close()
-            drain?.join(1000)
+            drain?.join(3000)
+            if(drain?.isAlive==true) MirrorCrashRecorder.note(this,"DECODER_DRAIN_SLOW: output thread still active during cleanup")
             runCatching { own?.codec?.stop() }
             runCatching { own?.codec?.release() }
             if (session === own) session = null

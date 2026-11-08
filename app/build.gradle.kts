@@ -15,8 +15,8 @@ android {
         applicationId = "com.samzlab.duopad"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "0.17.0-r9"
+        versionCode = 22
+        versionName = "0.17.1-r10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
@@ -32,7 +32,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
-            // No debug suffix: keep exact application ID
+            // R8 debug APK uses the exact requested package ID for on-device testing.
             isMinifyEnabled = false
         }
     }
