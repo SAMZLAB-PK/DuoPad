@@ -7,7 +7,7 @@ shellScreen=(src/'presentation/ui/screens/android/ProControlScreens.kt').read_te
 mirror=(src/'presentation/ui/DoupadMirrorActivity.kt').read_text()
 gradle=(root/'app/build.gradle.kts').read_text()
 assert 'applicationId = "com.samzlab.duopad"' in gradle
-assert any(x in gradle for x in ['versionCode = 20', 'versionCode = 21', 'versionCode = 22']) and any(x in gradle for x in ['versionName = "0.17.0-r8"', 'versionName = "0.17.0-r9"', 'versionName = "0.17.1-r10"'])
+assert any(x in gradle for x in ['versionCode = 20', 'versionCode = 21', 'versionCode = 22', 'versionCode = 23']) and any(x in gradle for x in ['versionName = "0.17.0-r8"', 'versionName = "0.17.0-r9"', 'versionName = "0.17.1-r10"', 'versionName = "0.17.2-r11"'])
 assert 'DropdownMenu(' in app and 'expandedAppMenu' in app
 assert 'Text("Force stop")' in app and 'Text("Uninstall"' in app
 assert 'modifier=modifier.height(94.dp)' in shell

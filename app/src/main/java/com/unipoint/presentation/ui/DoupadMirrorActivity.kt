@@ -86,6 +86,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     // Never attach two MediaCodec instances to one SurfaceView concurrently.
     // Manual encoder switching must wait for the previous decoder to be released.
     private val activeVideoAttempt = AtomicReference<Thread?>(null)
+    private val manualSwitchInProgress = AtomicBoolean(false)
     @Volatile private var lastVisibleVideoAtMs:Long=0L
     private var topControls:LinearLayout?=null
     private var leftControls:LinearLayout?=null
@@ -117,28 +118,48 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     private class Session(val adb: Dadb) {
         @Volatile var closed = false
+        private val closeOnce = AtomicBoolean(false)
+        val codecLock = Any()
         var server: AdbStream? = null
         var video: AdbStream? = null
         var audio: AdbStream? = null
         var audioTrack: AudioTrack? = null
         var control: AdbStream? = null
-        var codec: MediaCodec? = null
+        @Volatile var codec: MediaCodec? = null
         var displayWidth = 0
         var displayHeight = 0
         val visibilityMonitor = VisibleVideoMonitor()
         @Volatile var retryReason: String? = null
 
-        @Synchronized fun close() {
-            if (closed) return
+        // ADB close can block on older Dadb versions. Do not let that
+        // block MediaCodec teardown or another mirror profile.
+        fun close() {
+            if (!closeOnce.compareAndSet(false, true)) return
             closed = true
-            runCatching { control?.close() }
-            runCatching { video?.close() }
-            runCatching { audio?.close() }
-            runCatching { audioTrack?.pause() }
-            runCatching { audioTrack?.flush() }
-            runCatching { audioTrack?.release() }
-            runCatching { server?.close() }
-            runCatching { adb.close() }
+            listOf(control, video, audio, server).forEachIndexed { index, stream ->
+                if (stream != null) thread(name="doupad-adb-close-$index", isDaemon=true) {
+                    runCatching { stream.close() }
+                }
+            }
+            thread(name="doupad-adb-connection-close", isDaemon=true) {
+                runCatching { adb.close() }
+            }
+            val player = audioTrack
+            audioTrack = null
+            if (player != null) thread(name="doupad-audio-release", isDaemon=true) {
+                runCatching { player.pause() }
+                runCatching { player.flush() }
+                runCatching { player.release() }
+            }
+        }
+
+        // Serialize all codec operations. A stale socket reader can no longer
+        // submit input after manual teardown releases the Surface.
+        fun releaseDecoder(): Boolean = synchronized(codecLock) {
+            val decoder = codec ?: return@synchronized true
+            codec = null
+            runCatching { decoder.stop() }
+            runCatching { decoder.release() }.isSuccess
         }
     }
 
@@ -474,6 +495,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
     private fun nextTvBoxEncoder(){
         if(!intent.getBooleanExtra("aceconn_mode",false))return
+        if(manualSwitchInProgress.get()) {
+            MirrorCrashRecorder.note(this,"MANUAL_SWITCH_IGNORED: switch already underway")
+            return
+        }
         // The Aceconn already shows software-decoded VLC video correctly. A
         // manual switch during visible playback is optional and potentially
         // disruptive, so require confirmation before closing a good stream.
@@ -489,48 +514,58 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun switchTvBoxEncoderSafely(){
+        if (!manualSwitchInProgress.compareAndSet(false,true)) {
+            MirrorCrashRecorder.note(this,"MANUAL_SWITCH_IGNORED: cleanup already in progress")
+            status.visibility=View.VISIBLE
+            status.text="Encoder switch already in progress."
+            return
+        }
         val names=listOf("system-default","c2.android.avc.encoder","OMX.google.h264.encoder","software-decoder")
-        aceconnEncoderIndex=(aceconnEncoderIndex+1)%names.size
+        val nextIndex=(aceconnEncoderIndex+1)%names.size
         val ticket=generation.incrementAndGet()
         MirrorCrashRecorder.note(this,
-            "MANUAL_ENCODER_SWITCH: selected=${names[aceconnEncoderIndex]}, ticket=$ticket")
+            "MANUAL_ENCODER_SWITCH: selected=${names[nextIndex]}, ticket=$ticket")
         lastVideoSampleHash=null
         lastVisibleVideoAtMs=0L
         pendingBlackRetry=null
         status.visibility=View.VISIBLE
-        status.text="Closing previous decoder before switching…"
+        status.text="Closing the previous decoder…"
         val previous=session
-        // Do not close ADB on the main/UI thread. Then wait for the previous
-        // streamAttempt's FINALLY block to stop/release MediaCodec. A fixed
-        // 600-ms delay was unsafe: it could reconfigure the Surface while the
-        // old decoder was still using it, causing immediate profile failures.
         thread(name="doupad-manual-switch-cleanup",isDaemon=true){
-            runCatching{previous?.close()}.onFailure{
-                MirrorCrashRecorder.note(this,"MANUAL_SWITCH_CLOSE_ERROR: ${it.javaClass.simpleName}")
-            }
-            val oldAttempt=activeVideoAttempt.get()
-            if(oldAttempt!=null && oldAttempt !== Thread.currentThread() && oldAttempt.isAlive){
-                oldAttempt.join(6_000L)
-            }
-            val stillActive=oldAttempt?.isAlive==true
-            if(stillActive){
-                MirrorCrashRecorder.note(this,"MANUAL_SWITCH_DEFERRED: old MediaCodec still active after 6s")
-                show(ticket,"Previous decoder is still closing. Exit Mirror and reopen before switching.")
-                return@thread
-            }
-            MirrorCrashRecorder.note(this,"MANUAL_SWITCH_CLEANUP_OK: prior decoder stopped")
-            runOnUiThread{
+            try {
+                previous?.close()
+                MirrorCrashRecorder.note(this,"MANUAL_SWITCH_CLOSE_REQUESTED: ticket=$ticket")
+                val released=previous?.releaseDecoder() ?: true
+                if(!released){
+                    MirrorCrashRecorder.note(this,"MANUAL_SWITCH_RELEASE_FAILED: old decoder release failed")
+                    show(ticket,"Old decoder could not be released. Close and reopen Mirror.")
+                    return@thread
+                }
+                MirrorCrashRecorder.note(this,"MANUAL_SWITCH_DECODER_RELEASED: ticket=$ticket")
+                val oldAttempt=activeVideoAttempt.get()
+                if(oldAttempt!=null && oldAttempt!==Thread.currentThread() && oldAttempt.isAlive){
+                    oldAttempt.join(350L)
+                    if(oldAttempt.isAlive) MirrorCrashRecorder.note(this,
+                        "MANUAL_SWITCH_NETWORK_READER_STALE: decoder released; background ADB read still closing")
+                }
                 if(generation.get()!=ticket || isFinishing || isDestroyed || !surface.holder.surface.isValid){
                     MirrorCrashRecorder.note(this,"MANUAL_ENCODER_SWITCH_SKIPPED: stale surface ticket=$ticket")
-                }else{
-                    runCatching{worker.execute{
-                        MirrorCrashRecorder.note(this,"WORKER_STARTED: manual encoder switch, ticket=$ticket")
-                        stream(surface.holder,ticket)
-                    }}.onFailure{
-                        MirrorCrashRecorder.note(this,"MANUAL_ENCODER_SWITCH_ERROR: ${it.javaClass.simpleName}: ${it.message}")
-                        show(ticket,"Cannot switch encoder: ${it.message}")
-                    }
+                    return@thread
                 }
+                aceconnEncoderIndex=nextIndex
+                MirrorCrashRecorder.note(this,"MANUAL_SWITCH_CLEANUP_OK: prior decoder released")
+                runCatching{worker.execute{
+                    MirrorCrashRecorder.note(this,"WORKER_STARTED: manual encoder switch, ticket=$ticket")
+                    stream(surface.holder,ticket)
+                }}.onFailure{
+                    MirrorCrashRecorder.note(this,"MANUAL_ENCODER_SWITCH_ERROR: ${it.javaClass.simpleName}: ${it.message}")
+                    show(ticket,"Cannot switch encoder: ${it.message}")
+                }
+            } catch (error: Exception) {
+                MirrorCrashRecorder.note(this,"MANUAL_SWITCH_ERROR: ${error.javaClass.simpleName}: ${error.message}")
+                show(ticket,"Encoder switch failed: ${error.message}")
+            } finally {
+                manualSwitchInProgress.set(false)
             }
         }
     }
@@ -1151,9 +1186,15 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             val codec = if (softwareCodecName != null) {
                 MediaCodec.createByCodecName(softwareCodecName)
             } else MediaCodec.createDecoderByType("video/avc")
-            current.codec = codec
-            codec.configure(format, holder.surface, null, 0)
-            codec.start()
+            synchronized(current.codecLock) {
+                if(current.closed || generation.get()!=ticket) {
+                    runCatching { codec.release() }
+                    return
+                }
+                current.codec = codec
+                codec.configure(format, holder.surface, null, 0)
+                codec.start()
+            }
             val firstFrame = AtomicBoolean(false)
             val packetCount = AtomicInteger(0)
             val configCount = AtomicInteger(0)
@@ -1182,14 +1223,19 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 val info = MediaCodec.BufferInfo()
                 try {
                     while (!current.closed && generation.get() == ticket) {
-                        val index = codec.dequeueOutputBuffer(info, 10000)
-                        if(index==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){
-                            val newFormat=codec.outputFormat
-                            MirrorCrashRecorder.note(this@DoupadMirrorActivity,
-                                "DECODER_FORMAT_CHANGED: $newFormat")
-                        }
+                        val index=synchronized(current.codecLock) {
+                            if(current.closed || generation.get()!=ticket) null else {
+                                val result=codec.dequeueOutputBuffer(info,10000)
+                                if(result==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){
+                                    val newFormat=codec.outputFormat
+                                    MirrorCrashRecorder.note(this@DoupadMirrorActivity,
+                                        "DECODER_FORMAT_CHANGED: $newFormat")
+                                }
+                                if(result>=0) codec.releaseOutputBuffer(result,true)
+                                result
+                            }
+                        } ?: break
                         if (index >= 0) {
-                            codec.releaseOutputBuffer(index, true)
                             val outputFrames=renderedCount.incrementAndGet()
                             if(outputFrames<=3 || outputFrames%60==0){
                                 MirrorCrashRecorder.note(this@DoupadMirrorActivity,
@@ -1234,24 +1280,26 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                         "VIDEO_PACKET #$packetNumber size=$size config=$configPacket key=$keyFrame")
                 }
                 val bytes = source.readByteArray(size.toLong())
+                if (current.closed || generation.get()!=ticket) break
                 var index = -1
                 while (index < 0 && !current.closed && generation.get() == ticket) {
-                    index = codec.dequeueInputBuffer(10000)
+                    synchronized(current.codecLock) {
+                        if(!current.closed && generation.get()==ticket) index=codec.dequeueInputBuffer(10000)
+                    }
                 }
-                if (index < 0) break
-                val input = codec.getInputBuffer(index) ?: error("Decoder buffer unavailable")
-                require(size <= input.capacity()) { "Video frame exceeds decoder buffer" }
-                input.clear()
-                input.put(bytes)
-                codec.queueInputBuffer(
-                    index,
-                    0,
-                    size,
-                    meta and 0x3fffffffffffffffL,
-                    if (configPacket) MediaCodec.BUFFER_FLAG_CODEC_CONFIG else
-                        if (keyFrame) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
-                )
-                queuedCount.incrementAndGet()
+                if (index < 0 || current.closed || generation.get()!=ticket) break
+                synchronized(current.codecLock) {
+                    if(!current.closed && generation.get()==ticket) {
+                        val input=codec.getInputBuffer(index) ?: error("Decoder buffer unavailable")
+                        require(size<=input.capacity()) { "Video frame exceeds decoder buffer" }
+                        input.clear()
+                        input.put(bytes)
+                        codec.queueInputBuffer(index,0,size,meta and 0x3fffffffffffffffL,
+                            if(configPacket) MediaCodec.BUFFER_FLAG_CODEC_CONFIG else
+                            if(keyFrame) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+                        queuedCount.incrementAndGet()
+                    }
+                }
             }
             if (generation.get() == ticket && current.retryReason != null) {
                 throw IOException("${current.retryReason}")
@@ -1270,10 +1318,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
         } finally {
             own?.close()
-            drain?.join(3000)
-            if(drain?.isAlive==true) MirrorCrashRecorder.note(this,"DECODER_DRAIN_SLOW: output thread still active during cleanup")
-            runCatching { own?.codec?.stop() }
-            runCatching { own?.codec?.release() }
+            drain?.join(500L)
+            val released=own?.releaseDecoder() ?: true
+            MirrorCrashRecorder.note(this,"DECODER_CLEANUP: released=$released, drainAlive=${drain?.isAlive==true}, ticket=$ticket")
             if (session === own) session = null
         }
     }

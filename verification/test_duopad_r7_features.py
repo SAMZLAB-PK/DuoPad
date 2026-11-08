@@ -7,8 +7,8 @@ assert 'import android.view.WindowManager' in s
 assert s.count('window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)') == 2
 assert s.count('window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)') == 2
 assert 'override fun onPause()' in s and 'override fun onResume()' in s and 'override fun onDestroy()' in s
-assert any(x in gradle for x in ['versionCode = 20', 'versionCode = 21', 'versionCode = 22'])
-assert any(x in gradle for x in ['versionName = "0.17.0-r8"', 'versionName = "0.17.0-r9"', 'versionName = "0.17.1-r10"'])
+assert any(x in gradle for x in ['versionCode = 20', 'versionCode = 21', 'versionCode = 22', 'versionCode = 23'])
+assert any(x in gradle for x in ['versionName = "0.17.0-r8"', 'versionName = "0.17.0-r9"', 'versionName = "0.17.1-r10"', 'versionName = "0.17.2-r11"'])
 assert 'test_duopad_r7_features.py' in workflow
-assert any(x in workflow for x in ['DuoPad-Pro-v0.17.0-R8-debug.apk','DuoPad-Pro-v0.17.0-R9-debug.apk', 'DuoPad-Pro-v0.17.1-R10-debug.apk'])
+assert any(x in workflow for x in ['DuoPad-Pro-v0.17.0-R8-debug.apk','DuoPad-Pro-v0.17.0-R9-debug.apk', 'DuoPad-Pro-v0.17.1-R10-debug.apk', 'DuoPad-Pro-v0.17.2-R11-debug.apk'])
 print('DOUPAD_R7_KEEP_SCREEN_ON_LIFECYCLE_CHECKS_PASS')
