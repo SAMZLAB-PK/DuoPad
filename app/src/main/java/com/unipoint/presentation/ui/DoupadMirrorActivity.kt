@@ -31,6 +31,7 @@ import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
+import android.view.WindowManager
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.widget.FrameLayout
@@ -129,6 +130,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Keep phone awake only while Mirror Activity is foregrounded.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Never force orientation during startup: some Android 15/16 device
         // configurations reject an orientation request before the first draw.
         MirrorCrashRecorder.started(this)
@@ -224,11 +227,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     override fun onPause() {
         MirrorCrashRecorder.note(this,
             "ACTIVITY_PAUSE: generation=${generation.get()}; sessionOpen=${session?.closed == false}")
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onPause()
     }
 
     override fun onResume() {
         super.onResume()
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (::surface.isInitialized) MirrorCrashRecorder.note(this,
             "ACTIVITY_RESUME: generation=${generation.get()}; surfaceValid=${surface.holder.surface.isValid}")
     }
@@ -671,6 +676,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         generation.incrementAndGet()
         session?.close()
         surfaceStartHandler.removeCallbacksAndMessages(null)

@@ -20,6 +20,6 @@ assert 'sameAsPrevious=$unchanged' in mirror
 assert 'listOf(1500L,3500L,7000L)' not in mirror
 assert 'laterBlackMinimumMs: Long = 12_000L' in monitor
 assert 'startupBlackMinimumMs: Long = 10_000L' in monitor
-assert 'versionCode = 18' in build
-assert 'versionName = "0.16.2-aceconn-visibility-r6"' in build
+assert any(token in build for token in ['versionCode = 18', 'versionCode = 19'])
+assert any(token in build for token in ['versionName = "0.16.2-aceconn-visibility-r6"', 'versionName = "0.16.3-r7-mirror-screen-awake"'])
 print('DOUPAD_R6_CONTINUOUS_VISIBILITY_AND_RECOVERY_CHECKS_PASS')

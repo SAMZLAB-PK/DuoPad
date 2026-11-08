@@ -15,8 +15,8 @@ android {
         applicationId = "com.samz.samzlink"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.16.2-aceconn-visibility-r6"
+        versionCode = 19
+        versionName = "0.16.3-r7-mirror-screen-awake"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
