@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.roundToInt
 
-/** Binary writer for the scrcpy 3.3.x control protocol used by DOUPAD's bundled server. */
+/** Binary writer for the scrcpy 3.3.x control protocol used by DuoPad's bundled server. */
 object ScrcpyControlProtocol {
     const val TYPE_INJECT_KEYCODE = 0
     const val TYPE_INJECT_TEXT = 1
@@ -133,7 +133,7 @@ object ScrcpyControlProtocol {
         id: Int = UHID_MOUSE_ID,
         vendorId: Int = 0,
         productId: Int = 0,
-        name: String = "DOUPAD Mouse",
+        name: String = "DuoPad Mouse",
         reportDescriptor: ByteArray = UHID_MOUSE_REPORT_DESCRIPTOR
     ): ByteArray {
         val nameBytes = name.encodeToByteArray().take(127).toByteArray()

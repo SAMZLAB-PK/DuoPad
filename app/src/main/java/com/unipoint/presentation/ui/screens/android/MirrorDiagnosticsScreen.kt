@@ -90,7 +90,7 @@ fun MirrorDiagnosticsScreen(onBack:()->Unit) {
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
                 Button(onClick={
                     val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("DouPad mirror diagnostics",diagnostics))
+                    clipboard.setPrimaryClip(ClipData.newPlainText("DuoPad mirror diagnostics",diagnostics))
                 },modifier=Modifier.weight(1f)){
                     Icon(Icons.Default.ContentCopy,null)
                     Spacer(Modifier.width(6.dp))

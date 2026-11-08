@@ -112,7 +112,7 @@ fun DeviceListScreen(
                 TopAppBar(
                     title = {
                         Column {
-                            Text("DOUPAD", fontWeight = FontWeight.ExtraBold)
+                            Text("DuoPad", fontWeight = FontWeight.ExtraBold)
                             Text(
                                 "Your devices, one friendly remote",
                                 style = MaterialTheme.typography.bodySmall,
@@ -187,8 +187,8 @@ fun DeviceListScreen(
                     item {
                         EmptyDeviceCard(
                             icon = Icons.Default.Computer,
-                            title = if (uiState.isScanningPc) "Looking for DOUPAD Host…" else "No PC Host detected",
-                            subtitle = "Start DOUPAD Host on the PC. Auto-discovery, saved PCs and QR pairing are supported.",
+                            title = if (uiState.isScanningPc) "Looking for DuoPad Host…" else "No PC Host detected",
+                            subtitle = "Start DuoPad Host on the PC. Auto-discovery, saved PCs and QR pairing are supported.",
                             actionLabel = "Scan again",
                             onAction = { viewModel.scanPc() }
                         )
@@ -321,7 +321,7 @@ private fun PcDeviceCard(device: PcDevice, onClick: () -> Unit) {
         title = device.name,
         subtitle = device.address + when {
             device.isConnected -> "  •  Connected"
-            device.isReachable -> "  •  DOUPAD Host online"
+            device.isReachable -> "  •  DuoPad Host online"
             device.isSaved -> "  •  Saved PC — tap to retry"
             else -> ""
         },

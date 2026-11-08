@@ -45,7 +45,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("DOUPAD") },
+                title = { Text("DuoPad") },
                 navigationIcon = {
                     IconButton(onClick = {
                         viewModel.disconnect()

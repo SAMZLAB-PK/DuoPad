@@ -30,14 +30,14 @@ fun QrConnectScreen(
     onConnected: () -> Unit,
     viewModel: MainViewModel = hiltViewModel()
 ) {
-    var status by remember { mutableStateOf("Scan the QR shown by DOUPAD Host on your PC") }
+    var status by remember { mutableStateOf("Scan the QR shown by DuoPad Host on your PC") }
     var lastScanned by remember { mutableStateOf<String?>(null) }
     var manual by remember { mutableStateOf("") }
 
     fun connect(raw: String) {
         val endpoint = PcPairingUri.parse(raw)
         if (endpoint == null) {
-            status = "That QR is not a valid DOUPAD PC pairing code"
+            status = "That QR is not a valid DuoPad PC pairing code"
             return
         }
         lastScanned = raw
@@ -58,7 +58,7 @@ fun QrConnectScreen(
         scanner.launch(
             ScanOptions().apply {
                 setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                setPrompt("Scan the QR shown in DOUPAD Host")
+                setPrompt("Scan the QR shown in DuoPad Host")
                 setBeepEnabled(false)
                 setOrientationLocked(false)
                 setBarcodeImageEnabled(false)
@@ -98,7 +98,7 @@ fun QrConnectScreen(
             Button(onClick = ::launchScanner, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.QrCodeScanner, null)
                 Spacer(Modifier.width(8.dp))
-                Text("Scan DOUPAD Host QR")
+                Text("Scan DuoPad Host QR")
             }
 
             Spacer(Modifier.height(22.dp))

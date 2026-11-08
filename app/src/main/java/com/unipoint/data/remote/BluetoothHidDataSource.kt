@@ -78,7 +78,7 @@ class BluetoothHidDataSource @Inject constructor(
                             }
                             hidDevice = proxy as BluetoothHidDevice
                             val sdp = BluetoothHidDeviceAppSdpSettings(
-                                "DOUPAD Input", "DOUPAD Bluetooth Mouse + Keyboard", "SAMZ Labs",
+                                "DuoPad Input", "DuoPad Bluetooth Mouse + Keyboard", "SAMZ Labs",
                                 BluetoothHidDevice.SUBCLASS1_COMBO, REPORT_DESCRIPTOR
                             )
                             val inQos = BluetoothHidDeviceAppQosSettings(

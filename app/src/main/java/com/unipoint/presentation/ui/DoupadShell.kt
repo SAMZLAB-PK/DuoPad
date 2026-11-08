@@ -1356,9 +1356,9 @@ fun DoupadShell(
                     Text("VOL",fontSize=10.sp,fontWeight=FontWeight.Bold,color=Ink)
                 }
             }
-            listOf(0,2,4,6,8,10).forEachIndexed { index, level ->
+            (0..10).forEachIndexed { index, level ->
                 // Scale markings, not an invented readout of the TV's current volume.
-                val angle=(-150.0 + index*60.0)*PI/180.0
+                val angle=(-150.0 + index*30.0)*PI/180.0
                 Text(level.toString(),fontSize=9.sp,color=Muted,
                     modifier=Modifier.align(Alignment.Center)
                         .offset(x=(45*cos(angle)).dp,y=(45*sin(angle)).dp))

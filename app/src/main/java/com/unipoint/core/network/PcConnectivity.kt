@@ -189,7 +189,7 @@ object PcConnectionHistoryCodec {
             val host = decodeValue(parts[0]).takeIf { it.isNotBlank() } ?: return@mapNotNull null
             val port = parts[1].toIntOrNull()?.takeIf { it in 1..65535 } ?: return@mapNotNull null
             val lastSeen = parts[3].toLongOrNull() ?: return@mapNotNull null
-            val name = decodeValue(parts[4]).ifBlank { "DOUPAD PC" }
+            val name = decodeValue(parts[4]).ifBlank { "DuoPad PC" }
             PcHistoryEntry(host, port, name, parts[2] == "1", lastSeen)
         }.sortedByDescending { it.lastSeen }.take(MAX_ENTRIES).toList()
     }

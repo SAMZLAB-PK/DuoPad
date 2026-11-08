@@ -30,7 +30,7 @@ import java.net.SocketTimeoutException
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicLong
 
-/** Binary client + resilient LAN discovery for the DOUPAD desktop host. */
+/** Binary client + resilient LAN discovery for the DuoPad desktop host. */
 class NetworkPcDataSource constructor(
     @ApplicationContext private val context: Context
 ) {
@@ -150,12 +150,12 @@ class NetworkPcDataSource constructor(
                 val identity = pingIdentity(out, inp)
                     ?: run {
                         s.close()
-                        return@withContext Result.failure(Exception("Not a DOUPAD Host on $cleanIp:$port"))
+                        return@withContext Result.failure(Exception("Not a DuoPad Host on $cleanIp:$port"))
                     }
                 val parsedIdentity = PcHostIdentity.parse(identity)
                     ?: run {
                         s.close()
-                        return@withContext Result.failure(Exception("Unsupported DOUPAD Host identity"))
+                        return@withContext Result.failure(Exception("Unsupported DuoPad Host identity"))
                     }
                 val authRequired = parsedIdentity.authRequired
                 if (authRequired && pin.isNullOrBlank()) {
@@ -177,7 +177,7 @@ class NetworkPcDataSource constructor(
                 val verifyStart = System.currentTimeMillis()
                 if (pingIdentity(out, inp) == null) {
                     s.close()
-                    return@withContext Result.failure(Exception("DOUPAD Host handshake failed"))
+                    return@withContext Result.failure(Exception("DuoPad Host handshake failed"))
                 }
 
                 socket = s
@@ -190,12 +190,12 @@ class NetworkPcDataSource constructor(
                     PcHistoryEntry(
                         host = cleanIp,
                         port = port,
-                        name = parsedIdentity.name ?: historyEntries().firstOrNull { it.host == cleanIp && it.port == port }?.name ?: "DOUPAD PC",
+                        name = parsedIdentity.name ?: historyEntries().firstOrNull { it.host == cleanIp && it.port == port }?.name ?: "DuoPad PC",
                         authRequired = authRequired,
                         lastSeen = System.currentTimeMillis()
                     )
                 )
-                Log.i(tag, "Verified DOUPAD Host $cleanIp:$port")
+                Log.i(tag, "Verified DuoPad Host $cleanIp:$port")
                 Result.success(Unit)
             } catch (e: Exception) {
                 disconnect()
@@ -344,7 +344,7 @@ class NetworkPcDataSource constructor(
                 val identity = PcHostIdentity.parse(identityText) ?: return null
                 PcDevice(
                     id = "$ip:$port",
-                    name = (identity.name ?: "DOUPAD PC") + if (identity.authRequired) " (PIN)" else "",
+                    name = (identity.name ?: "DuoPad PC") + if (identity.authRequired) " (PIN)" else "",
                     address = "$ip:$port",
                     type = PcConnectionType.NETWORK,
                     requiresPin = identity.authRequired,

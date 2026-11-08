@@ -64,7 +64,7 @@ class ClipboardSync @Inject constructor(
     }
 
     fun setClipboard(text: String) {
-        clipboard.setPrimaryClip(ClipData.newPlainText("UniPoint", text))
+        clipboard.setPrimaryClip(ClipData.newPlainText("DuoPad", text))
         _lastSynced.value = text
     }
 }

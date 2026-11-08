@@ -110,7 +110,7 @@ fun ScreenMirrorScreen(
                 put(MediaStore.Images.Media.DISPLAY_NAME, name)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/UniPoint")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/DuoPad")
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
             }

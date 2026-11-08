@@ -85,7 +85,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     private fun checkpoint(ticket: Int, name: String) {
         stage = name
-        Log.i("DouPadMirror", "session=$ticket stage=$name")
+        Log.i("DuoPadMirror", "session=$ticket stage=$name")
         runCatching {
             File(filesDir, "doupad_mirror_diagnostics.txt").appendText(
                 "${System.currentTimeMillis()} session=$ticket $name\n"
@@ -97,7 +97,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     private fun failure(ticket: Int, cause: Throwable) {
         val detail = cause.message ?: cause.javaClass.simpleName
         val message = "$stage — $detail"
-        Log.e("DouPadMirror", message, cause)
+        Log.e("DuoPadMirror", message, cause)
         runCatching {
             val file = File(filesDir, "doupad_mirror_diagnostics.txt")
             file.appendText("${System.currentTimeMillis()} session=$ticket ERROR $message\n")
@@ -162,7 +162,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 val diagnostics = runCatching {
                     File(filesDir, "doupad_mirror_diagnostics.txt").readText().takeLast(7000)
                 }.getOrDefault(text.toString())
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("DouPad Mirror diagnostics",diagnostics))
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("DuoPad Mirror diagnostics",diagnostics))
                 android.widget.Toast.makeText(this@DoupadMirrorActivity,"Mirror diagnostics copied",android.widget.Toast.LENGTH_SHORT).show()
                 true
             }
@@ -409,17 +409,17 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             if(result==PixelCopy.SUCCESS){
                 try{
                     val details=ContentValues().apply{
-                        put(MediaStore.Images.Media.DISPLAY_NAME,"DouPad-${System.currentTimeMillis()}.png")
+                        put(MediaStore.Images.Media.DISPLAY_NAME,"DuoPad-${System.currentTimeMillis()}.png")
                         put(MediaStore.Images.Media.MIME_TYPE,"image/png")
                         if(Build.VERSION.SDK_INT>=29)
-                            put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/DouPad")
+                            put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/DuoPad")
                     }
                     val uri=contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,details)
                     if(uri!=null){
                         contentResolver.openOutputStream(uri)?.use{
                             bitmap.compress(Bitmap.CompressFormat.PNG,100,it)
                         }
-                        Toast.makeText(this,"Screenshot saved to Pictures/DouPad",Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this,"Screenshot saved to Pictures/DuoPad",Toast.LENGTH_SHORT).show()
                     }
                 }catch(e:Exception){
                     MirrorCrashRecorder.note(this,"SCREENSHOT_ERROR: ${e.message}")
@@ -834,7 +834,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             if (result.isSuccess) return
             val error = result.exceptionOrNull()
             val detail = error?.message ?: error?.javaClass?.simpleName ?: "Unknown video error"
-            android.util.Log.w("DouPadVideo", "Video profile ${index + 1} failed: $detail", error)
+            android.util.Log.w("DuoPadVideo", "Video profile ${index + 1} failed: $detail", error)
             if (error != null) failure(ticket, error)
             if (index == profiles.lastIndex) {
                 show(ticket,

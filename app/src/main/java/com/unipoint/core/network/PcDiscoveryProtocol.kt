@@ -24,7 +24,7 @@ object PcDiscoveryProtocol {
         }
         val parts = text.removePrefix(prefix).split('|')
         if (parts.size < 3) return null
-        val name = parts[0].trim().ifBlank { "DOUPAD PC" }
+        val name = parts[0].trim().ifBlank { "DuoPad PC" }
         val port = parts[1].toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
         val auth = parts[2].substringAfter("AUTH=", "0") == "1"
         return PcDiscoveryAnnouncement(name, port, auth)

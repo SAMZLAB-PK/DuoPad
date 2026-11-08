@@ -230,7 +230,7 @@ private fun ToolsTab(vm: MainViewModel, onOpenFiles: () -> Unit, onOpenMirror: (
                             put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
                             put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
                             if (android.os.Build.VERSION.SDK_INT >= 29) {
-                                put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/UniPoint")
+                                put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/DuoPad")
                             }
                         }
                         val uri = ctx.contentResolver.insert(
@@ -240,7 +240,7 @@ private fun ToolsTab(vm: MainViewModel, onOpenFiles: () -> Unit, onOpenMirror: (
                             ctx.contentResolver.openOutputStream(u)?.use { out ->
                                 java.io.FileInputStream(f).use { it.copyTo(out) }
                             }
-                            msg = "Saved to Gallery (Pictures/UniPoint)"
+                            msg = "Saved to Gallery (Pictures/DuoPad)"
                         }
                     } catch (e: Exception) {
                         msg = "Save failed: ${e.message}"

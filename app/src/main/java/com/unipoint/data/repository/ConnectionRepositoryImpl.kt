@@ -76,7 +76,7 @@ class ConnectionRepositoryImpl @Inject constructor(
         heartbeatJob?.cancel()
         _status.value = ConnectionStatus(
             state = ConnectionState.RECONNECTING,
-            deviceName = "DOUPAD PC",
+            deviceName = "DuoPad PC",
             address = "${target.ip}:${target.port}"
         )
         startReconnect(target)
@@ -92,7 +92,7 @@ class ConnectionRepositoryImpl @Inject constructor(
                     activePcType = PcConnectionType.NETWORK
                     _status.value = ConnectionStatus(
                         state = ConnectionState.CONNECTED,
-                        deviceName = "DOUPAD PC",
+                        deviceName = "DuoPad PC",
                         address = "${target.ip}:${target.port}",
                         latencyMs = network.latencyMs,
                         connectedSince = System.currentTimeMillis()
@@ -103,9 +103,9 @@ class ConnectionRepositoryImpl @Inject constructor(
             }
             _status.value = ConnectionStatus(
                 state = ConnectionState.ERROR,
-                deviceName = "DOUPAD PC",
+                deviceName = "DuoPad PC",
                 address = "${target.ip}:${target.port}",
-                errorMessage = "PC is offline or unreachable. Start DOUPAD Host, then tap the saved PC to retry."
+                errorMessage = "PC is offline or unreachable. Start DuoPad Host, then tap the saved PC to retry."
             )
         }
     }
@@ -167,14 +167,14 @@ class ConnectionRepositoryImpl @Inject constructor(
             reconnectJob?.cancel()
             _status.value = ConnectionStatus(
                 state = ConnectionState.CONNECTED,
-                deviceName = "DOUPAD PC",
+                deviceName = "DuoPad PC",
                 address = "$ip:$port",
                 latencyMs = network.latencyMs,
                 connectedSince = System.currentTimeMillis()
             )
             _pcDevices.update { list ->
                 val previous = list.firstOrNull { it.id == "$ip:$port" }
-                val connected = (previous ?: PcDevice("$ip:$port", "DOUPAD PC", "$ip:$port", PcConnectionType.NETWORK)).copy(
+                val connected = (previous ?: PcDevice("$ip:$port", "DuoPad PC", "$ip:$port", PcConnectionType.NETWORK)).copy(
                     isConnected = true,
                     isReachable = true,
                     isSaved = true
