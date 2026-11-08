@@ -88,11 +88,92 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     private val activeVideoAttempt = AtomicReference<Thread?>(null)
     private val manualSwitchInProgress = AtomicBoolean(false)
     private val exitRequested = AtomicBoolean(false)
+    private var systemBackCallback: android.window.OnBackInvokedCallback? = null
     @Volatile private var lastVisibleVideoAtMs:Long=0L
     private var topControls:LinearLayout?=null
     private var leftControls:LinearLayout?=null
     private var rightControls:LinearLayout?=null
     private var bottomControls:LinearLayout?=null
+    private var controlsVisible = true
+    private var lastBackPressAtMs = 0L
+    private val controlsHideDelayMs = 4300L
+    private var hideControlsJob: Runnable? = null
+    private var lastVideoWidth = 0
+    private var lastVideoHeight = 0
+
+    private fun showControlsTemporarily(reason: String) {
+        if (exitRequested.get() || !::root.isInitialized) return
+        controlsVisible = true
+        listOfNotNull(topControls, leftControls, rightControls, bottomControls)
+            .forEach { it.visibility = View.VISIBLE }
+        hideControlsJob?.let { surfaceStartHandler.removeCallbacks(it) }
+        val job = Runnable {
+            if (!exitRequested.get() && !isFinishing) {
+                controlsVisible = false
+                listOfNotNull(topControls, leftControls, rightControls, bottomControls)
+                    .forEach { it.visibility = View.GONE }
+                MirrorCrashRecorder.note(this, "MIRROR_CONTROLS_AUTO_HIDDEN")
+            }
+        }
+        hideControlsJob = job
+        surfaceStartHandler.postDelayed(job, controlsHideDelayMs)
+        if (reason != "refresh") MirrorCrashRecorder.note(this, "MIRROR_CONTROLS_SHOWN: $reason")
+    }
+
+    private fun handleMirrorBack() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (lastBackPressAtMs > 0L && now - lastBackPressAtMs <= 2800L) {
+            MirrorCrashRecorder.note(this, "MIRROR_DOUBLE_BACK_EXIT")
+            requestMirrorExit()
+        } else {
+            lastBackPressAtMs = now
+            showControlsTemporarily("first-back")
+            // No exit on first Back; second within 2.8s exits.
+        }
+    }
+
+    /** Keep bars next to the *visible video* instead of the phone's far edges. */
+    private fun positionControlsNearVideo() {
+        if (!::root.isInitialized || root.width <= 0 || root.height <= 0) return
+        val w = root.width
+        val h = root.height
+        val hasVideo = lastVideoWidth > 0 && lastVideoHeight > 0
+        val visibleHeight = if (hasVideo) {
+            val scale = minOf(w.toFloat() / lastVideoWidth, h.toFloat() / lastVideoHeight)
+            (lastVideoHeight * scale).toInt().coerceIn(dp(90), h)
+        } else h
+        val top = (h - visibleHeight) / 2
+        (topControls?.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+            val desired = (top + dp(3)).coerceAtMost(h - dp(48))
+            if (params.topMargin != desired) {
+                params.gravity = Gravity.TOP
+                params.topMargin = desired
+                topControls?.layoutParams = params
+            }
+        }
+        (bottomControls?.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+            val desired = ((h - visibleHeight) / 2 + dp(3)).coerceAtMost(h - dp(120))
+            if (params.bottomMargin != desired) {
+                params.gravity = Gravity.BOTTOM
+                params.bottomMargin = desired
+                bottomControls?.layoutParams = params
+            }
+        }
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        if (landscape) {
+            val visibleWidth = if (hasVideo) {
+                val scale = minOf(w.toFloat() / lastVideoWidth, h.toFloat() / lastVideoHeight)
+                (lastVideoWidth * scale).toInt().coerceIn(dp(90), w)
+            } else w
+            val side = (w - visibleWidth) / 2 + dp(4)
+            (leftControls?.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+                if (params.leftMargin != side) {params.leftMargin = side;leftControls?.layoutParams = params}
+            }
+            (rightControls?.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+                if (params.rightMargin != side) {params.rightMargin = side;rightControls?.layoutParams = params}
+            }
+        }
+    }
 
     /** Do not interrupt an active Gradle worker-style stream wait via shutdownNow().
      * A previous release could throw uncaught InterruptedException from await()
@@ -103,6 +184,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         val ticket = generation.incrementAndGet()
         MirrorCrashRecorder.note(this, "MIRROR_EXIT_REQUESTED: ticket=$ticket")
         surfaceStartHandler.removeCallbacksAndMessages(null)
+        hideControlsJob = null
         session?.close()
         finish()
     }
@@ -145,8 +227,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         val visibilityMonitor = VisibleVideoMonitor()
         @Volatile var retryReason: String? = null
 
-        // ADB close can block on older Dadb versions. Do not let that
-        // block MediaCodec teardown or another mirror profile.
+        // Dadb 1.2.x can leave a socket reader parked in a queue while close()
+        // waits for a device. Never block the UI or the decoder's finally block
+        // on a transport close, and never serialise video close after control close.
         fun close() {
             if (!closeOnce.compareAndSet(false, true)) return
             closed = true
@@ -167,8 +250,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
         }
 
-        // Serialize all codec operations. A stale socket reader can no longer
-        // submit input after manual teardown releases the Surface.
+        // MediaCodec operations are serialised so an old video reader cannot
+        // queue input while a manual switch is releasing the same decoder.
+        // A stopped decoder is detached from the Surface before the next starts,
+        // even if the old network read is still parked.
         fun releaseDecoder(): Boolean = synchronized(codecLock) {
             val decoder = codec ?: return@synchronized true
             codec = null
@@ -192,8 +277,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             isFocusable = true
             isFocusableInTouchMode = true
             setOnTouchListener { _, event ->
-                sendTouch(event)
-                true
+                if (event.actionMasked == MotionEvent.ACTION_DOWN && !controlsVisible) {
+                    showControlsTemporarily("video-tap")
+                    true
+                } else {
+                    sendTouch(event)
+                    true
+                }
             }
         }
         status = TextView(this).apply {
@@ -228,12 +318,21 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             )
         )
         setContentView(root)
+        // On Android 13+, predictive Back can bypass legacy onBackPressed().
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val callback = android.window.OnBackInvokedCallback { handleMirrorBack() }
+            systemBackCallback = callback
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+        }
         MirrorCrashRecorder.note(this, "ACTIVITY_CONTENT_READY: content view installed")
         surface.holder.addCallback(this)
         createControls()
         root.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ ->
             session?.let { fitSurface(it.displayWidth,it.displayHeight) }
+            positionControlsNearVideo()
         }
+        showControlsTemporarily("mirror-start")
         // Defer fullscreen flags until the DecorView is attached to a window.
         root.post {
             if (!isFinishing && !isDestroyed) enterImmersive()
@@ -298,6 +397,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         root.post {
             createControls()
             session?.let { fitSurface(it.displayWidth,it.displayHeight) }
+            positionControlsNearVideo()
+            showControlsTemporarily("orientation")
         }
     }
 
@@ -311,11 +412,14 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     private fun fitSurface(videoWidth: Int,videoHeight: Int) {
         val w=root.width;val h=root.height
         if(w<=0||h<=0||videoWidth<=0||videoHeight<=0)return
+        lastVideoWidth = videoWidth
+        lastVideoHeight = videoHeight
         // Do not resize the SurfaceHolder (would kill MediaCodec session).
         // Scale the already-attached SurfaceView instead, preserving aspect.
         val scale=minOf(w.toFloat()/videoWidth,h.toFloat()/videoHeight)
         surface.scaleX=(videoWidth*scale)/w
         surface.scaleY=(videoHeight*scale)/h
+        positionControlsNearVideo()
         val signature="${w}x${h} -> ${videoWidth}x${videoHeight}"
         if(lastFitSignature!=signature){
             lastFitSignature=signature
@@ -333,7 +437,10 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             text=label;textSize=20f;setTextColor(Color.WHITE)
             gravity=Gravity.CENTER;background=tile
             isClickable=true;contentDescription=label
-            setOnClickListener{action()}
+            setOnClickListener{
+                showControlsTemporarily("refresh")
+                action()
+            }
         }
     }
     private fun sendKey(code:Int){
@@ -415,7 +522,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                             else "Decoder is active but video appears black. Try TV Box mode or TV Home."
                         }
                         if (intent.getBooleanExtra("aceconn_mode",false) &&
-                            observation.shouldRetry && current.retryReason==null) {
+                            observation.shouldRetry && current.retryReason==null &&
+                            lastVisibleVideoAtMs == 0L) {
                             val reason="BLACK_OUTPUT: persistent near-black PixelCopy " +
                                 "samples=${observation.blackSamples}, " +
                                 "durationMs=${observation.blackDurationMs}"
@@ -428,6 +536,9 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                             status.text="Video remains black; trying the next compatibility profile…"
                             thread(name="doupad-black-output-retry",isDaemon=true) {
                                 current.close()
+                                val released=current.releaseDecoder()
+                                MirrorCrashRecorder.note(this,
+                                    "AUTO_PROFILE_DECODER_RELEASED: success=$released, ticket=$ticket")
                             }
                         }
                     } else {
@@ -534,7 +645,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             status.text="Encoder switch already in progress."
             return
         }
-        val names=listOf("system-default","c2.android.avc.encoder","OMX.google.h264.encoder","software-decoder")
+        val names=listOf("640p/24 default","640p/24 software-decoder","720p/20 c2.android","640p/12 safe")
         val nextIndex=(aceconnEncoderIndex+1)%names.size
         val ticket=generation.incrementAndGet()
         MirrorCrashRecorder.note(this,
@@ -547,8 +658,13 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
         val previous=session
         thread(name="doupad-manual-switch-cleanup",isDaemon=true){
             try {
+                // close() now marks the session closed immediately, then closes
+                // ADB channels asynchronously. The old socket reader may remain
+                // blocked, but it can never touch MediaCodec after closed=true.
                 previous?.close()
                 MirrorCrashRecorder.note(this,"MANUAL_SWITCH_CLOSE_REQUESTED: ticket=$ticket")
+                // Wait for any in-flight codec call using the same lock, then
+                // stop+release exactly once. No dependency on the ADB reader exiting.
                 val released=previous?.releaseDecoder() ?: true
                 if(!released){
                     MirrorCrashRecorder.note(this,"MANUAL_SWITCH_RELEASE_FAILED: old decoder release failed")
@@ -687,7 +803,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             bar.addView(button,dims)
         }
         val header=bar(false)
-        val back=remoteButton("‹"){requestMirrorExit()}
+        val back=remoteButton("‹"){handleMirrorBack()}
         val audio=remoteButton(if(muted)"🔇" else "♪"){
             muted=!muted
             session?.audioTrack?.setVolume(if(muted)0f else 1f)
@@ -764,6 +880,11 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             })
             bottomControls=bottom
         }
+        if (!controlsVisible) {
+            listOfNotNull(topControls,leftControls,rightControls,bottomControls)
+                .forEach { it.visibility = View.GONE }
+        }
+        root.post { positionControlsNearVideo() }
     }
 
     private fun sendTouch(event: MotionEvent) {
@@ -864,10 +985,16 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        requestMirrorExit()
+        handleMirrorBack()
     }
 
     override fun onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            systemBackCallback?.let { callback ->
+                runCatching { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback) }
+            }
+            systemBackCallback = null
+        }
         snapshotMode=false
         snapshotAdb?.let { adb -> thread(isDaemon=true){runCatching{adb.close()}} }
         snapshotAdb=null
@@ -891,38 +1018,35 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
     )
 
     private fun stream(holder: SurfaceHolder, ticket: Int) {
-        // Second preset deliberately disables scrcpy control socket. Some Android TV
-        // firmware streams video reliably but rejects the second abstract socket.
+        // Attempt audio in EVERY video profile. scrcpy may report unavailable
+        // for Android <=10 / incompatible firmware; do not abort video in that case.
         val aceconnMode=intent.getBooleanExtra("aceconn_mode",false)
         val smoothMode=intent.getBooleanExtra("smooth_tv_mode",false)
         val withAudio=intent.getBooleanExtra("tv_audio_mode",false)
+        lastVisibleVideoAtMs=0L
         val profiles=if(aceconnMode) listOf(
-            // Vendor encoder can produce blank frames on some Aceconn boxes.
-            // Try a much lighter video-only capture before alternate codecs.
-            VideoProfile(640,12,750_000,true,false),
-            VideoProfile(720,12,850_000,true,false,"c2.android.avc.encoder"),
-            VideoProfile(640,10,650_000,true,false,"OMX.google.h264.encoder"),
-            VideoProfile(640,10,600_000,true,false,null,true)
+            // Fast software-decoded VLC capture: higher frame budget, modest bitrate.
+            VideoProfile(640,24,1_200_000,true,true),
+            VideoProfile(640,24,1_200_000,true,true,null,true),
+            VideoProfile(720,20,1_250_000,true,true,"c2.android.avc.encoder"),
+            // Proven reliable low-load preset stays as last-resort compatibility.
+            VideoProfile(640,12,750_000,true,true)
         ).let { all -> all.drop(aceconnEncoderIndex.coerceIn(0,all.lastIndex)) +
             all.take(aceconnEncoderIndex.coerceIn(0,all.lastIndex)) }
         else if(smoothMode) listOf(
-            // Video-only by default: Mi TV can handle smooth capture (confirmed
-            // by the user's atvTools test). Keep resolution moderate to avoid
-            // the TV's encoder falling behind while increasing FPS to 30.
-            VideoProfile(720,30,2_400_000,true,false),
-            VideoProfile(640,24,1_350_000,true,false)
+            VideoProfile(720,30,2_400_000,true,true),
+            VideoProfile(640,24,1_350_000,true,true)
         ) else if(withAudio) listOf(
             VideoProfile(960,24,2_000_000,true,true),
-            VideoProfile(720,15,1_200_000,true,true)
+            VideoProfile(720,24,1_450_000,true,true)
         ) else listOf(
-            // Normal TV Home / app navigation should not be limited to 12 fps.
-            VideoProfile(720,24,1_800_000,true,false),
-            VideoProfile(640,20,1_100_000,true,false)
+            VideoProfile(720,30,2_000_000,true,true),
+            VideoProfile(640,24,1_200_000,true,true)
         )
         MirrorCrashRecorder.note(this,
-            "STREAM_MODE: ${if(aceconnMode)"TV_BOX_COMPATIBILITY" else if(smoothMode)"SMOOTH_VIDEO_ONLY" else if(withAudio)"AUDIO_HIGH_QUALITY" else "STANDARD_LOW_LOAD"}; " +
+            "STREAM_MODE: ${if(aceconnMode)"TV_BOX_COMPATIBILITY" else if(smoothMode)"SMOOTH_WITH_AUDIO" else if(withAudio)"AUDIO_HIGH_QUALITY" else "STANDARD_WITH_AUDIO"}; " +
                 "profileCount=${profiles.size}; selectedIndex=${if(aceconnMode)aceconnEncoderIndex else 0}; " +
-                "blackOutputRecovery=${if(aceconnMode) "sustained-black-auto-retry" else "off"}")
+                "audioRequested=true; blackOutputRecovery=${if(aceconnMode) "sustained-black-auto-retry" else "off"}")
         for ((index, profile) in profiles.withIndex()) {
             if (generation.get() != ticket) return
             checkpoint(ticket,
@@ -971,12 +1095,16 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
             }
             if (generation.get() != ticket) return
             if(abandoned){
-                // Do not start another MediaCodec while a previous decoder
-                // still holds the same Surface. Prefer a safe failure to a
-                // crash or a chain of bogus profile errors.
-                MirrorCrashRecorder.note(this,"PROFILE_RETRY_DEFERRED: previous decoder still active")
-                show(ticket,"Old decoder has not released the surface. Close and reopen Mirror.")
-                return
+                // A stalled ADB read is not proof that the old MediaCodec still
+                // owns the Surface. Detach/release the decoder independently.
+                val oldSession=session
+                val released=oldSession?.releaseDecoder() ?: true
+                MirrorCrashRecorder.note(this,
+                    "PROFILE_RETRY_OLD_SOCKET_STALE: codecReleased=$released, ticket=$ticket")
+                if (!released) {
+                    show(ticket,"Old decoder could not release the surface. Close and reopen Mirror.")
+                    return
+                }
             }
             val blackRetry = pendingBlackRetry
             val error: Throwable? = attemptError.get()
@@ -1134,7 +1262,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                         val codecId=audioSource.readInt()
                         if(codecId==0 || codecId==1){
                             MirrorCrashRecorder.note(this@DoupadMirrorActivity,
-                                "AUDIO_UNAVAILABLE: device reported codec status $codecId")
+                                "AUDIO_UNAVAILABLE: device reported codec status $codecId; " +
+                                    "Android version, lock state or TV firmware may disallow audio capture")
                         } else if(codecId==0x00726177){
                             val outputFormat=AudioFormat.Builder()
                                 .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -1298,7 +1427,8 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                                 MirrorCrashRecorder.note(this@DoupadMirrorActivity,
                                     "VIDEO_FPS: decoded=${"%.1f".format(java.util.Locale.US,measuredFps)}, " +
                                         "target=${profile.fps}, total=$outputFrames, " +
-                                        "packets=${packetCount.get()}, queued=${queuedCount.get()}, ticket=$ticket")
+                                        "packets=${packetCount.get()}, queued=${queuedCount.get()}, " +
+                                        "decodeBacklogFrames=${(queuedCount.get()-outputFrames).coerceAtLeast(0)}, ticket=$ticket")
                                 fpsWindowStartedMs=measuredAtMs
                                 fpsWindowFrames=0
                             }
@@ -1321,6 +1451,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                                             "VIDEO_VISIBILITY_WATCHDOG: continuous 2.5s samples; " +
                                                 "graceful black-output retry in TV Box mode")
                                         scheduleVisibleVideoSample(ticket,current,1500L)
+                                        showControlsTemporarily("first-frame")
                                     }
                                 }
                             }
@@ -1382,6 +1513,7 @@ class DoupadMirrorActivity : Activity(), SurfaceHolder.Callback {
                 throw IOException("Video pipeline: $why", e)
             }
         } finally {
+            // Decoder cleanup must never be blocked behind an ADB close/read.
             own?.close()
             drain?.join(500L)
             val released=own?.releaseDecoder() ?: true

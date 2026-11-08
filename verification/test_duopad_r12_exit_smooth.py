@@ -12,10 +12,10 @@ assert 'STREAM_WORKER_INTERRUPTED' in s
 assert 'VIDEO_FPS:' in s
 assert 'codec.releaseOutputBuffer(result, System.nanoTime())' in s
 assert 'codec.releaseOutputBuffer(result,true)' not in s
-assert 'VideoProfile(720,30,2_400_000,true,false)' in s
-assert 'VideoProfile(640,24,1_350_000,true,false)' in s
-assert 'VideoProfile(640,12,750_000,true,false)' in s
+assert 'VideoProfile(720,30,2_400_000,true,true)' in s
+assert 'VideoProfile(640,24,1_350_000,true,true)' in s
+assert 'VideoProfile(640,12,750_000,true,true)' in s
 assert 'mirrorWorker = thread.name.startsWith("doupad-")' in c
-assert 'versionCode = 24' in g and 'versionName = "0.17.3-r12"' in g
+assert 'versionCode = 25' in g and 'versionName = "0.17.4-r13"' in g
 assert 'test_duopad_r12_exit_smooth.py' in w
 print('R12_EXIT_SMOOTH_SOURCE_CHECK_PASS')

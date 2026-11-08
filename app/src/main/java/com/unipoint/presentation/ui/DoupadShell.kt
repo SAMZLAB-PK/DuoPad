@@ -617,7 +617,7 @@ fun DoupadShell(
                         if(scanFilter!="PC"){
                             androidFound.forEach { device ->
                                 val saved=savedTargets.firstOrNull { it.endpoint==device.id }
-                                val name=saved?.customName ?: saved?.name ?: "Android TV / Box"
+                                val name=saved?.customName ?: saved?.name ?: device.name
                                 targetButton(Target(name,device.id,false,saved?.customName),
                                     device.id + if(saved!=null)" · Saved" else " · Tap to authorize & connect",
                                     if(saved!=null)Teal else Muted)()

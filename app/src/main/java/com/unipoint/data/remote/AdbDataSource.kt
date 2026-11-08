@@ -29,6 +29,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.InetSocketAddress
+import java.net.InetAddress
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.security.SecureRandom
@@ -119,13 +120,26 @@ class AdbDataSource constructor(
      */
     private fun probeDevice(ip: String, port: Int): AndroidDevice? {
         if (!isPortOpen(ip, port, 360)) return null
+        val cachedName = context.getSharedPreferences("duopad_verified_device_names", Context.MODE_PRIVATE)
+            .getString("$ip:$port", null)?.takeIf { it.isNotBlank() }
         return AndroidDevice(
             id = "$ip:$port",
-            name = "Android TV / Box",
+            name = cachedName ?: "Android TV / Box",
             ip = ip,
             port = port
         )
     }
+
+    /** Passive LAN name enrichment. Reverse DNS is not authentication and may
+     * return nothing; never invent the model if neither DNS nor cache knows it.
+     * Executed only for already responsive ADB endpoints, not every IP.
+     */
+    private fun localHostname(ip: String): String? = runCatching {
+        val reverse = InetAddress.getByName(ip).canonicalHostName.trim()
+        val host = reverse.substringBefore('.').trim()
+        host.takeIf { it.isNotBlank() && it != ip && it != "localhost" &&
+            !it.matches(Regex("[0-9.]+")) && host.length in 2..64 }
+    }.getOrNull()
 
     suspend fun discover(extraSubnets: List<String> = emptyList()): List<AndroidDevice> =
         withContext(Dispatchers.IO) {
@@ -173,9 +187,21 @@ class AdbDataSource constructor(
                 }
             }
 
-            _devices.value = found
-            Log.i(tag, "Found ${found.size} devices")
-            found
+            // Reachable ADB sockets alone cannot disclose ro.product.model
+            // before authorization; try reverse-DNS LAN names and previous
+            // verified names, preserving the original IP/port identity.
+            val enriched = found.map { item ->
+                async(Dispatchers.IO) {
+                    if (item.name != "Android TV / Box") item
+                    else {
+                        val host = localHostname(item.ip)
+                        if (host.isNullOrBlank()) item else item.copy(name = host, model = host)
+                    }
+                }
+            }.awaitAll()
+            _devices.value = enriched
+            Log.i(tag, "Found ${enriched.size} devices with LAN name enrichment")
+            enriched
         }
 
     /**
@@ -222,6 +248,8 @@ class AdbDataSource constructor(
                     ?: runCatching { session.shell("getprop ro.product.device").allOutput.trim() }
                         .getOrDefault("").ifBlank { "Android device ($finalIp)" }
                 authorizedModelName = model
+                context.getSharedPreferences("duopad_verified_device_names", Context.MODE_PRIVATE)
+                    .edit().putString("$finalIp:$finalPort", model).apply()
                 lastConnectedIp = finalIp
                 lastConnectedPort = finalPort
                 runCatching {
