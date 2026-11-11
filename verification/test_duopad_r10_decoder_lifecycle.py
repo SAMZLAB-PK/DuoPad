@@ -9,7 +9,7 @@ for token in ['activeVideoAttempt','MANUAL_SWITCH_CLEANUP_OK', 'MANUAL_SWITCH_DE
               'Video is visible', 'STREAM_EXCEPTION:']:
     assert token in s, token
 assert 'current?.close()' not in s[s.index('private fun switchTvBoxEncoderSafely()'):s.index('private fun toggleSnapshotFallback()')]
-assert 'versionCode = 29' in g and 'versionName = "0.18.2-r17-pc-pin-handshake"' in g
+assert 'versionCode = 30' in g and 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.3-r18-pc-workspace-qr-host-share"' in g
 assert 'test_duopad_r10_decoder_lifecycle.py' in w
-assert 'DuoPad-Pro-v0.18.2-R17-debug.apk' in w
+assert 'DuoPad-Pro-v0.18.3-R18-debug.apk' in w
 print('R10_DECODER_LIFECYCLE_SOURCE_CHECK_PASS')

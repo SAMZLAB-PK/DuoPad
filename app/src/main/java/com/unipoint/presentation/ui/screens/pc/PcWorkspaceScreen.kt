@@ -37,6 +37,7 @@ fun PcWorkspaceScreen(
     host: String,
     port: Int,
     pin: String,
+    initialTab: String = "Screen",
     onBack: () -> Unit,
     onMove: (Float, Float) -> Unit,
     onLeftClick: () -> Unit,
@@ -47,9 +48,9 @@ fun PcWorkspaceScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val client = remember(host, port, pin) { PcWorkspaceClient(host, port, pin) }
+    val client = remember(host, port, pin) { PcWorkspaceClient(context.applicationContext, host, port, pin) }
     DisposableEffect(client) { onDispose { client.close() } }
-    var tab by remember { mutableStateOf("Screen") }
+    var tab by remember(initialTab) { mutableStateOf(initialTab.takeIf { it in listOf("Screen", "Files", "Info") } ?: "Screen") }
     var message by remember { mutableStateOf("Connecting to PC Host…") }
     var busy by remember { mutableStateOf(false) }
     var desktop by remember { mutableStateOf<Bitmap?>(null) }
@@ -58,6 +59,7 @@ fun PcWorkspaceScreen(
     var directory by remember { mutableStateOf<JSONObject?>(null) }
     var folder by remember { mutableStateOf("") }
     var reload by remember { mutableIntStateOf(0) }
+    var lastError by remember { mutableStateOf<String?>(null) }
     var keyboardText by remember { mutableStateOf("") }
     var selectedDownloadPath by remember { mutableStateOf<String?>(null) }
     var selectedUploadFolder by remember { mutableStateOf<String?>(null) }
@@ -95,6 +97,7 @@ fun PcWorkspaceScreen(
     }
 
     LaunchedEffect(tab, folder, reload, quality, previewWidth) {
+        lastError = null
         try {
             when (tab) {
                 "Screen" -> {
@@ -115,7 +118,10 @@ fun PcWorkspaceScreen(
             }
         } catch (_: CancellationException) {
             // Switching tabs cancels the previous stream without an error toast.
-        } catch (ex: Exception) { message = "PC Workspace: ${ex.message}" }
+        } catch (ex: Exception) {
+            lastError = ex.message ?: ex.javaClass.simpleName
+            message = "PC ${tab} failed: ${lastError}"
+        }
     }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -135,6 +141,16 @@ fun PcWorkspaceScreen(
                     tab = option
                     if (option == "Files") folder = ""
                 }, label = { Text(option) }, modifier = Modifier.weight(1f))
+            }
+        }
+        if (lastError != null) {
+            Surface(color = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("PC ${tab} unavailable: ${lastError}",
+                        color = MaterialTheme.colorScheme.onErrorContainer)
+                    TextButton(onClick = { reload++ }) { Text("Retry ${tab}") }
+                }
             }
         }
         when (tab) {
@@ -244,7 +260,7 @@ fun PcWorkspaceScreen(
                                     Icon(if (isDirectory) Icons.Default.ChevronRight else Icons.Default.Download, null)
                                 },
                                 modifier = Modifier.clickable {
-                                    if (isDirectory) folder = path else {
+                                    if (isDirectory) { directory=null; folder = path } else {
                                         selectedDownloadPath = path
                                         downloadPicker.launch(name)
                                     }

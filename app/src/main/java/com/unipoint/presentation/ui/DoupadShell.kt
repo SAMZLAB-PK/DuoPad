@@ -50,6 +50,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.ContextCompat
 import com.unipoint.BuildConfig
+import com.unipoint.core.network.PcPairingUri
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.unipoint.domain.model.*
 import com.unipoint.presentation.viewmodel.MainViewModel
 import com.unipoint.presentation.ui.screens.android.*
@@ -101,6 +104,7 @@ fun DoupadShell(
     var ip by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("5555") }
     var pin by remember { mutableStateOf("") }
+    var pcWorkspaceTab by rememberSaveable { mutableStateOf("Screen") }
     var pc by remember { mutableStateOf(false) }
     var pcTransport by rememberSaveable { mutableStateOf("bluetooth") }
     var localError by remember { mutableStateOf("") }
@@ -124,6 +128,31 @@ fun DoupadShell(
     val status=state.connectionStatus
     val connected=status.state==ConnectionState.CONNECTED
     fun message(text:String){scope.launch { snack.showSnackbar(text) }}
+    // The QR scanner already existed in an unused navigation screen. Make it
+    // reachable from the actual PC discovery/connect interface.
+    val pcQrScanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val raw = result.contents
+        if (!raw.isNullOrBlank()) {
+            val endpoint = PcPairingUri.parse(raw)
+            if (endpoint == null) message("Not a valid DuoPad PC pairing QR code")
+            else {
+                pc=true; pcTransport="wifi"
+                ip=endpoint.host; port=endpoint.port.toString(); pin=endpoint.pin.orEmpty()
+                connectRequested=true; dialog=null
+                vm.connectNetwork(endpoint.host,endpoint.port,endpoint.pin,onSuccess={
+                    connectRequested=false; dialog=null; pcWorkspaceTab="Info"; page=3; detail="pcWorkspace"
+                })
+            }
+        }
+    }
+    fun scanPcQr() {
+        pcQrScanner.launch(ScanOptions().apply {
+            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            setPrompt("Scan the QR shown by DuoPad PC Host")
+            setBeepEnabled(false)
+            setOrientationLocked(false)
+        })
+    }
     val discoverableLauncher=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
     val bluetoothPermissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         if(grants.values.all { it }) {
@@ -175,7 +204,7 @@ fun DoupadShell(
         val isTv = state.mode == AppMode.ANDROID
         when(pendingQuickAction) {
             "Mirror" -> {
-                if(isTv) page=2 else {page=3;detail="pcWorkspace"}
+                if(isTv) page=2 else {pcWorkspaceTab="Screen";page=3;detail="pcWorkspace"}
             }
             "Mouse Pad", "Air Mouse" -> {
                 page=1
@@ -189,7 +218,7 @@ fun DoupadShell(
             }
             "Send files" -> {
                 if(isTv) {page=3;detail="files"}
-                else {page=3;detail="pcWorkspace"}
+                else {pcWorkspaceTab="Files";page=3;detail="pcWorkspace"}
             }
             "Install APK" -> {
                 if(isTv) {page=3;detail="install"}
@@ -320,7 +349,7 @@ fun DoupadShell(
             val pcHost = pcEndpoint.substringBefore(':')
             val pcPort = pcEndpoint.substringAfter(':',"27845").toIntOrNull() ?: 27845
             PcWorkspaceScreen(
-                host=pcHost, port=pcPort, pin=pin,
+                host=pcHost, port=pcPort, pin=pin, initialTab=pcWorkspaceTab,
                 onBack=back,
                 onMove={dx,dy->vm.sendMouseMove(dx,dy)},
                 onLeftClick={vm.sendMouseClick(MouseButton.LEFT)},
@@ -350,7 +379,7 @@ fun DoupadShell(
                     )).forEach { (label,icon,target) ->
                         Column(Modifier.weight(1f).clickable {
                             if(target=="tools"){page=3;detail=null}
-                            else if(state.mode==AppMode.PC) detail="pcWorkspace"
+                            else if(state.mode==AppMode.PC) {pcWorkspaceTab=label; detail="pcWorkspace"}
                             else if(requireTv())detail=target
                         },horizontalAlignment=Alignment.CenterHorizontally){
                             Surface(color=if(page==3&&target=="tools")DuoColors.AccentContainer else Color.Transparent,
@@ -1013,22 +1042,22 @@ fun DoupadShell(
                         Title("Windows PC Workspace","Control desktop, files, drives and PC information.")
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                             ToolTile("PC screen","",Icons.Default.Computer,Modifier.weight(1f)) {
-                                detail="pcWorkspace"
+                                pcWorkspaceTab="Screen"; detail="pcWorkspace"
                             }
                             ToolTile("PC drives & files","",Icons.Default.FolderOpen,Modifier.weight(1f)) {
-                                detail="pcWorkspace"
+                                pcWorkspaceTab="Files"; detail="pcWorkspace"
                             }
                         }
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                             ToolTile("System information","",Icons.Default.Memory,Modifier.weight(1f)) {
-                                detail="pcWorkspace"
+                                pcWorkspaceTab="Info"; detail="pcWorkspace"
                             }
                             ToolTile("Keyboard","",Icons.Default.Keyboard,Modifier.weight(1f)) {
                                 detail="pcKeyboard"
                             }
                         }
                         Hint("PC Workspace needs DuoPad Host v4 running on your own PC. Enter its PIN when connecting. Local trusted LAN only.")
-                        OutlinedButton(onClick={detail="pcWorkspace"},modifier=Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick={pcWorkspaceTab="Screen";detail="pcWorkspace"},modifier=Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.OpenInFull,null)
                             Spacer(Modifier.width(8.dp))
                             Text("Open full PC Workspace")
@@ -1229,9 +1258,13 @@ fun DoupadShell(
                                                 Text(if(state.hasScannedPc) "Search Again" else "Search PC")
                                             }
                                             Button(onClick={
-                                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.HOST_RELEASES_URL))) }
-                                                    .onFailure { message("Could not open the DuoPad Pro Host download page.") }
+                                                runCatching { DuoPadHostShare.share(context) }
+                                                    .onFailure { message("Could not share the Windows Host package: ${it.message}") }
                                             },modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Get Host")}
+                                        }
+                                        TextButton(onClick={scanPcQr()},modifier=Modifier.fillMaxWidth()) {
+                                            Icon(Icons.Default.QrCodeScanner,null,Modifier.size(18.dp))
+                                            Spacer(Modifier.width(7.dp)); Text("Scan Host QR Code")
                                         }
                                         TextButton(onClick={pcTransport="bluetooth"},modifier=Modifier.fillMaxWidth()){Text("Use Bluetooth Direct instead")}
                                     }
@@ -1241,6 +1274,19 @@ fun DoupadShell(
                             OutlinedTextField(ip,{ip=it},label={Text("PC IP address")},singleLine=true)
                             OutlinedTextField(port,{port=it.filter(Char::isDigit)},label={Text("Port")},singleLine=true)
                             OutlinedTextField(pin,{pin=it},label={Text("Host pairing PIN (optional)")},singleLine=true)
+                            OutlinedButton(onClick={scanPcQr()},modifier=Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.QrCodeScanner,null,Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp)); Text("Connect by QR Code")
+                            }
+                            OutlinedButton(onClick={
+                                runCatching { DuoPadHostShare.share(context) }
+                                    .onFailure { message("Windows Host share failed: ${it.message}") }
+                            },modifier=Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Share,null,Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp)); Text("Send Windows Host to PC · Bluetooth / Quick Share")
+                            }
+                            Text("On Windows, accept the ZIP, extract it and run Run-DOUPAD-Host.bat. User approval is required; automatic installation is not supported.",
+                                fontSize=11.sp,color=Muted)
                         }
                     }
                     if(localError.isNotBlank())Text(localError,color=MaterialTheme.colorScheme.error)
@@ -1371,6 +1417,7 @@ fun DoupadShell(
                             connectRequested=false
                             dialog=null
                             page=3
+                            pcWorkspaceTab="Info"
                             detail="pcWorkspace"
                         })
                         else vm.connectAndroidIp("$ip:$p")
