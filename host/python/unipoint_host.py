@@ -33,6 +33,19 @@ import ipaddress
 from urllib.parse import quote
 from typing import Iterable, Optional
 
+try:
+    from pc_workspace import PcWorkspaceService
+except ModuleNotFoundError:
+    # Test harnesses load unipoint_host.py directly by filename.
+    import importlib.util
+    from pathlib import Path as _ModulePath
+    _spec = importlib.util.spec_from_file_location(
+        "duopad_pc_workspace", _ModulePath(__file__).with_name("pc_workspace.py")
+    )
+    _module = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_module)
+    PcWorkspaceService = _module.PcWorkspaceService
+
 # ---------------------------------------------------------------------------
 # Platform-specific input injection
 # ---------------------------------------------------------------------------
@@ -386,7 +399,8 @@ class ClientHandler(threading.Thread):
         self.addr = addr
         self.injector = injector
         self.pin = pin
-        self.authenticated = pin is None  # no pin → auto auth
+        self.authenticated = pin is None  # local development only; launcher always uses a PIN
+        self.workspace = PcWorkspaceService()
 
     def run(self):
         print(f"[+] Client connected: {self.addr}")
@@ -403,6 +417,7 @@ class ClientHandler(threading.Thread):
         except Exception as e:
             print(f"[!] Client error {self.addr}: {e}")
         finally:
+            self.workspace.close()
             self.conn.close()
             print(f"[-] Client disconnected: {self.addr}")
 
@@ -449,10 +464,8 @@ class ClientHandler(threading.Thread):
             text = payload.decode("utf-8", errors="ignore")
             self.injector.type_text(text)
 
-        elif ptype == 0x21:                              # Clipboard (receive)
-            text = payload.decode("utf-8", errors="ignore")
-            print(f"[clip] {text[:80]}…")
-            # Could set system clipboard here with pyperclip
+        elif ptype in (0x30, 0x31, 0x32, 0x33, 0x34, 0x40, 0x21, 0x22):
+            self.workspace.handle(self.conn, ptype, payload, send_packet, read_exact)
 
 
 # ---------------------------------------------------------------------------
@@ -462,10 +475,21 @@ class ClientHandler(threading.Thread):
 def main():
     parser = argparse.ArgumentParser(description="DOUPAD Host")
     parser.add_argument("--port", type=int, default=27845)
-    parser.add_argument("--pin", type=str, default=None, help="Optional security PIN")
+    parser.add_argument("--pin", type=str, default=None, help="Use a fixed 8+ character pairing PIN")
+    parser.add_argument("--no-pin", action="store_true", help="Insecure; allowed for localhost testing only")
     parser.add_argument("--bind", type=str, default="0.0.0.0")
     args = parser.parse_args()
 
+    if args.no_pin and args.bind not in ("127.0.0.1", "::1", "localhost"):
+        parser.error("--no-pin is allowed only when bound to loopback")
+    if args.no_pin:
+        args.pin = None
+    elif args.pin is None:
+        # Short-lived PIN displayed visibly on the host PC. Re-enter after restarting.
+        import secrets
+        args.pin = f"{secrets.randbelow(100_000_000):08d}"
+    if args.pin and len(args.pin) < 8:
+        parser.error("PIN must contain at least 8 characters")
     injector = InputInjector()
     discovery = DiscoveryResponder(args.port, args.pin)
     discovery.start()
@@ -479,7 +503,7 @@ def main():
     hostname = socket.gethostname() or "DOUPAD PC"
     lan_ips = get_lan_ipv4s()
     print("=" * 58)
-    print("  DOUPAD Host  v3.2")
+    print("  DOUPAD Host  v4.0 PC Workspace")
     print(f"  TCP control:      {args.bind}:{args.port}")
     discovery_state = "READY" if not discovery.error else f"BLOCKED: {discovery.error}"
     print(f"  LAN discovery:    UDP {DISCOVERY_PORT} ({discovery_state})")
@@ -488,7 +512,9 @@ def main():
             print(f"  Connect address:  {ip}:{args.port}")
     else:
         print("  Connect address:  could not determine LAN IPv4")
-    print(f"  PIN protection:   {'enabled' if args.pin else 'off'}")
+    print(f"  PIN protection:   {'enabled' if args.pin else 'off (localhost only)'}")
+    if args.pin:
+        print(f"  Pairing PIN:      {args.pin}")
     print("  Keep this window open while using Network PC mode.")
     print("=" * 58)
     if lan_ips:
@@ -500,6 +526,17 @@ def main():
         while True:
             conn, addr = server.accept()
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            # A local interactive desktop user must start the host. Reject WAN
+            # clients: this LAN transport does not offer transport-layer encryption.
+            try:
+                client_ip = ipaddress.ip_address(addr[0])
+                allowed = client_ip.is_private or client_ip.is_loopback
+            except ValueError:
+                allowed = False
+            if not allowed:
+                print(f"[!] Rejected non-LAN client: {addr[0]}")
+                conn.close()
+                continue
             ClientHandler(conn, addr, injector, args.pin).start()
     except KeyboardInterrupt:
         print("\n[+] Shutting down")

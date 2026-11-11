@@ -1,0 +1,62 @@
+name: Build DuoPad Windows PC Host
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'release/**'
+      - main
+    paths:
+      - 'host/**'
+      - '.github/workflows/build-pc-host.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-host:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r host/python/requirements.txt pyinstaller
+      - name: Run PC Host protocol tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s host/python/tests -v
+      - name: Build portable Windows EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --console `
+            --name DuoPad-PC-Host --paths host/python `
+            host/python/unipoint_host.py
+      - name: Package one-click Windows host
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/package | Out-Null
+          Copy-Item dist/DuoPad-PC-Host.exe dist/package/
+          Copy-Item host/windows/SETUP-FIREWALL-ONCE.bat dist/package/
+          @'
+          @echo off
+          title DuoPad PC Host v4.0
+          echo Run on YOUR own Windows PC. Do not forward the PC Host port to the internet.
+          netsh advfirewall firewall show rule name="DuoPad PC Host TCP 27845" >nul 2>&1
+          if %errorlevel% neq 0 call "%~dp0SETUP-FIREWALL-ONCE.bat"
+          "%~dp0DuoPad-PC-Host.exe" --port 27845
+          pause
+          '@ | Set-Content -Path dist/package/START-DUOPAD-PC-HOST.bat -Encoding ascii
+          Copy-Item host/WINDOWS-SETUP.md dist/package/README-PC-HOST.md
+          Get-FileHash dist/package/DuoPad-PC-Host.exe -Algorithm SHA256 | ForEach-Object { "SHA256: $($_.Hash)" } | Out-File dist/package/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DuoPad-Windows-PC-Host-v4.0-R15
+          path: dist/package/*
+          if-no-files-found: error
+          retention-days: 14

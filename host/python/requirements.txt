@@ -3,3 +3,7 @@ qrcode>=8.0
 
 # Optional for macOS/Linux real input injection. Windows uses the built-in native backend.
 pynput>=1.7.7; platform_system != "Windows"
+
+# Optional but required for PC Workspace desktop screen preview (local JPEG frames).
+mss>=10.0.0
+Pillow>=11.0.0

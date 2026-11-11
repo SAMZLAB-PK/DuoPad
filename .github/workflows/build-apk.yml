@@ -82,6 +82,8 @@ jobs:
           python3 verification/test_duopad_r12_exit_smooth.py
           python3 verification/test_duopad_r13_audio_controls_names.py
           python3 verification/test_duopad_r14_ui_navigation.py
+          python3 verification/test_duopad_r15_pc_workspace.py
+          python3 -m unittest discover -s host/python/tests -v
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
@@ -95,15 +97,15 @@ jobs:
           mkdir -p dist
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -f "$APK"
-          cp "$APK" 'dist/DuoPad-Pro-v0.17.5-R14-debug.apk'
-          sha256sum 'dist/DuoPad-Pro-v0.17.5-R14-debug.apk' | tee 'dist/SHA256SUMS.txt'
+          cp "$APK" 'dist/DuoPad-Pro-v0.18.0-R15-debug.apk'
+          sha256sum 'dist/DuoPad-Pro-v0.18.0-R15-debug.apk' | tee 'dist/SHA256SUMS.txt'
 
       - name: Upload DOUPAD APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DuoPad-Pro-v0.17.5-R14-debug
+          name: DuoPad-Pro-v0.18.0-R15-debug
           path: |
-            dist/DuoPad-Pro-v0.17.5-R14-debug.apk
+            dist/DuoPad-Pro-v0.18.0-R15-debug.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

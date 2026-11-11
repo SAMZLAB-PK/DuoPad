@@ -54,6 +54,7 @@ import com.unipoint.domain.model.*
 import com.unipoint.presentation.viewmodel.MainViewModel
 import com.unipoint.presentation.ui.screens.android.*
 import com.unipoint.presentation.ui.screens.pc.KeyboardScreen
+import com.unipoint.presentation.ui.screens.pc.PcWorkspaceScreen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import org.json.JSONArray
@@ -174,7 +175,7 @@ fun DoupadShell(
         val isTv = state.mode == AppMode.ANDROID
         when(pendingQuickAction) {
             "Mirror" -> {
-                if(isTv) page=2 else {page=1;message("PC mirroring needs a compatible host.")}
+                if(isTv) page=2 else {page=3;detail="pcWorkspace"}
             }
             "Mouse Pad", "Air Mouse" -> {
                 page=1
@@ -188,7 +189,7 @@ fun DoupadShell(
             }
             "Send files" -> {
                 if(isTv) {page=3;detail="files"}
-                else {page=3;message("PC file transfer requires a supported host.")}
+                else {page=3;detail="pcWorkspace"}
             }
             "Install APK" -> {
                 if(isTv) {page=3;detail="install"}
@@ -214,9 +215,16 @@ fun DoupadShell(
         ip=target.endpoint.substringBefore(':')
         port=target.endpoint.substringAfter(':',if(target.pc)"27845" else "5555")
         pc=target.pc;pcTransport="wifi";localError=""
-        connectRequested=true;dialog="connectingSaved"
-        if(target.pc)vm.connectNetwork(ip,port.toIntOrNull()?:27845)
-        else vm.connectAndroidIp("$ip:$port")
+        if(target.pc) {
+            // PC files/screen access requires an explicit Host PIN each session.
+            // Never attempt to reconnect a previously saved PC without credentials.
+            connectRequested=false
+            pin=""
+            dialog="connect"
+        } else {
+            connectRequested=true;dialog="connectingSaved"
+            vm.connectAndroidIp("$ip:$port")
+        }
     }
     val voice=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()){ result ->
         result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { command=it;dialog="keyboard" }
@@ -266,7 +274,7 @@ fun DoupadShell(
             val host=target.endpoint.substringBefore(':')
             val port=target.endpoint.substringAfter(':',if(target.pc) "27845" else "5555").toIntOrNull()
             if(port!=null) {
-                if(target.pc) vm.connectNetwork(host,port)
+                if(target.pc) return@LaunchedEffect // Host PIN required; avoid unauthenticated automatic attempts
                 else vm.connectAndroidIp("$host:$port")
             }
         }
@@ -307,20 +315,42 @@ fun DoupadShell(
         "gamepadFull"->{AndroidGamepadScreen(onBack=back);return}
         "mappingFull"->{RemoteMappingScreen(onBack=back);return}
         "pcKeyboard"->{KeyboardScreen(onBack=back);return}
+        "pcWorkspace"->{
+            val pcEndpoint = status.address.orEmpty()
+            val pcHost = pcEndpoint.substringBefore(':')
+            val pcPort = pcEndpoint.substringAfter(':',"27845").toIntOrNull() ?: 27845
+            PcWorkspaceScreen(
+                host=pcHost, port=pcPort, pin=pin,
+                onBack=back,
+                onMove={dx,dy->vm.sendMouseMove(dx,dy)},
+                onLeftClick={vm.sendMouseClick(MouseButton.LEFT)},
+                onRightClick={vm.sendMouseClick(MouseButton.RIGHT)},
+                onScroll={delta->vm.sendScroll(delta)},
+                onText={value->vm.sendText(value)},
+                onKey={keyCode->vm.sendKey(keyCode,true);vm.sendKey(keyCode,false)}
+            )
+            return
+        }
     }
     Scaffold(containerColor=Background,snackbarHost={SnackbarHost(snack)},bottomBar={
         if(page!=4 && connected){
             Surface(color=Background){
                 Row(Modifier.fillMaxWidth().navigationBarsPadding().height(65.dp),
                     horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically){
-                    listOf(
+                    (if(state.mode==AppMode.PC) listOf(
+                        Triple("Tools",Icons.Default.Handyman,"tools"),
+                        Triple("Screen",Icons.Default.Computer,"pcWorkspace"),
+                        Triple("Files",Icons.Default.FolderOpen,"pcWorkspace"),
+                        Triple("Info",Icons.Default.Info,"pcWorkspace")
+                    ) else listOf(
                         Triple("Tools",Icons.Default.Handyman,"tools"),
                         Triple("Apps",Icons.Default.GridView,"apps"),
                         Triple("Shell",Icons.Default.Terminal,"shellFull"),
                         Triple("Info",Icons.Default.Info,"infoFull")
-                    ).forEach { (label,icon,target) ->
+                    )).forEach { (label,icon,target) ->
                         Column(Modifier.weight(1f).clickable {
                             if(target=="tools"){page=3;detail=null}
+                            else if(state.mode==AppMode.PC) detail="pcWorkspace"
                             else if(requireTv())detail=target
                         },horizontalAlignment=Alignment.CenterHorizontally){
                             Surface(color=if(page==3&&target=="tools")DuoColors.AccentContainer else Color.Transparent,
@@ -965,6 +995,31 @@ fun DoupadShell(
                         }
                         IconButton(onClick={dialog="settings"}){Icon(Icons.Default.MoreVert,"Device options")}
                     }
+                    if(state.mode==AppMode.PC) {
+                        Title("Windows PC Workspace","Control desktop, files, drives and PC information.")
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                            ToolTile("PC screen","",Icons.Default.Computer,Modifier.weight(1f)) {
+                                detail="pcWorkspace"
+                            }
+                            ToolTile("PC drives & files","",Icons.Default.FolderOpen,Modifier.weight(1f)) {
+                                detail="pcWorkspace"
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                            ToolTile("System information","",Icons.Default.Memory,Modifier.weight(1f)) {
+                                detail="pcWorkspace"
+                            }
+                            ToolTile("Keyboard","",Icons.Default.Keyboard,Modifier.weight(1f)) {
+                                detail="pcKeyboard"
+                            }
+                        }
+                        Hint("PC Workspace needs DuoPad Host v4 running on your own PC. Enter its PIN when connecting. Local trusted LAN only.")
+                        OutlinedButton(onClick={detail="pcWorkspace"},modifier=Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.OpenInFull,null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Open full PC Workspace")
+                        }
+                    } else {
                     val mainTools=listOf(
                         Triple("Install",Icons.Default.InstallMobile,"install"),
                         Triple("Upload to Downloads",Icons.Default.UploadFile,"files"),
@@ -1006,6 +1061,7 @@ fun DoupadShell(
                         Spacer(Modifier.width(8.dp))
                         Text("Remote control")
                     }
+                    } // TV-only cards
                 }
                 5->{
                     Title("Settings","Control your connected devices and preferences.")

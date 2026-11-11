@@ -15,8 +15,8 @@ android {
         applicationId = "com.samzlab.duopad"
         minSdk = 26
         targetSdk = 36
-        versionCode = 26
-        versionName = "0.17.5-r14-navigation-theme"
+        versionCode = 27
+        versionName = "0.18.0-r15-pc-workspace"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 

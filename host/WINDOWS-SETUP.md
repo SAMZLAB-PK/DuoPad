@@ -43,3 +43,21 @@ The QR code includes the PIN and discovered PC cards show a lock indicator.
 5. Saved PCs remain in the app and can be retried even while offline.
 
 DOUPAD also uses directed broadcast, remembered endpoints, LAN TCP probing, heartbeat health checks and automatic reconnect so a short Wi-Fi interruption does not force a fresh setup.
+
+## PC Workspace v1 (R15)
+
+Run the interactive Host window on your own PC. It displays an 8-digit pairing PIN
+(generated fresh on each launch unless you explicitly set --pin). Enter that PIN
+in the Android DuoPad connection screen. The same Windows Host now supports:
+PC information, drives/folders, file upload/download (1 GiB/file), clipboard text,
+and PC screen JPEG preview with interactive mouse and keyboard.
+
+On Windows, first-run setup installs mss/Pillow for screen capture. For best
+performance choose 960px desktop preview on the same 5GHz LAN. This is a
+functional MJPEG-style screen preview, not 60fps H.264/RDP yet.
+
+**Security:** This is a PIN-authenticated *unencrypted LAN* protocol: use only on a
+trusted private network, and never port-forward TCP 27845 to the internet.
+For internet remote desktop, use a later TLS-authenticated transport or an
+established secured RDP/VPN solution. The Host does not install a hidden service
+or launch automatically; closing the Host terminal stops access.
