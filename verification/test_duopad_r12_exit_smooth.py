@@ -16,6 +16,6 @@ assert 'VideoProfile(720,30,2_400_000,true,true)' in s
 assert 'VideoProfile(640,24,1_350_000,true,true)' in s
 assert 'VideoProfile(640,12,750_000,true,true)' in s
 assert 'mirrorWorker = thread.name.startsWith("doupad-")' in c
-assert 'versionCode = 25' in g and 'versionName = "0.17.4-r13"' in g
+assert 'versionCode = 26' in g and 'versionName = "0.17.5-r14-navigation-theme"' in g
 assert 'test_duopad_r12_exit_smooth.py' in w
 print('R12_EXIT_SMOOTH_SOURCE_CHECK_PASS')

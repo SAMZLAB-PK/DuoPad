@@ -191,7 +191,7 @@ fun DoupadShell(
                 else {page=3;message("PC file transfer requires a supported host.")}
             }
             "Install APK" -> {
-                if(isTv) {page=3;detail="apps"}
+                if(isTv) {page=3;detail="install"}
                 else {page=3;message("APK installation is for Android devices only.")}
             }
             "Remote" -> page=1
@@ -280,6 +280,8 @@ fun DoupadShell(
     val back={detail=null}
     when(detail) {
         "apps"->{AppManagerScreen(onBack=back);return}
+        "install"->{InstallApkScreen(onBack=back);return}
+        "channels"->{ChannelManagerScreen(onBack=back);return}
         "files"->{FileManagerScreen(onBack=back);return}
         "preview"->{ScreenMirrorScreen(onBack=back);return}
         "mouse"->{AndroidMousePadScreen(
@@ -517,27 +519,28 @@ fun DoupadShell(
                 }
                 4->{
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
-                        horizontalArrangement=Arrangement.SpaceBetween){
-                        Text("DuoPad",fontSize=29.sp,fontWeight=FontWeight.Bold,color=Ink,
+                        horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        // Preserve the original DuoPad D-logo; pair it with the
+                        // name on the landing screen rather than using text alone.
+                        Image(painter=painterResource(R.drawable.ic_launcher),
+                            contentDescription="Original DuoPad logo",modifier=Modifier.size(39.dp))
+                        Text("DuoPad",fontSize=27.sp,fontWeight=FontWeight.Bold,color=Ink,
                             fontFamily=FontFamily.Serif,modifier=Modifier.weight(1f))
-                        Surface(shape=RoundedCornerShape(22.dp),color=Pale,
-                            border=BorderStroke(1.dp,Border)) {
-                            Row(verticalAlignment=Alignment.CenterVertically) {
-                                listOf(Triple("light","Light",Icons.Default.WbSunny),
-                                       Triple("dark","Dark",Icons.Default.DarkMode)).forEach { (choice,label,icon) ->
-                                    val selected=appearance==choice || (appearance=="bento" && choice=="light")
-                                    TextButton(onClick={onAppearanceChange(choice)},
-                                        colors=ButtonDefaults.textButtonColors(
-                                            containerColor=if(selected)MaterialTheme.colorScheme.primaryContainer else Color.Transparent),
-                                        contentPadding=PaddingValues(horizontal=8.dp,vertical=1.dp)) {
-                                        Icon(icon,null,Modifier.size(16.dp),tint=Ink)
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(label,fontSize=11.sp,color=Ink)
-                                    }
-                                }
-                            }
+                        val currentlyDark=appearance=="dark"
+                        FilledTonalButton(
+                            onClick={onAppearanceChange(if(currentlyDark) "light" else "dark")},
+                            shape=RoundedCornerShape(18.dp),
+                            contentPadding=PaddingValues(horizontal=13.dp,vertical=7.dp),
+                            modifier=Modifier.height(38.dp)
+                        ) {
+                            Icon(if(currentlyDark) Icons.Default.WbSunny else Icons.Default.DarkMode,
+                                if(currentlyDark) "Switch to light theme" else "Switch to dark theme",
+                                modifier=Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if(currentlyDark) "Light" else "Dark",fontSize=12.sp)
                         }
-                        IconButton(onClick={vm.scanNearby()}){Icon(Icons.Default.Refresh,"Refresh",tint=Ink)}
+                        // The old search/refresh icon is intentionally removed.
+                        // Users still have Scan again at the end of device list.
                     }
                     Text("Last connected",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink)
                     val lastConnected=targets.firstOrNull()
@@ -963,10 +966,10 @@ fun DoupadShell(
                         IconButton(onClick={dialog="settings"}){Icon(Icons.Default.MoreVert,"Device options")}
                     }
                     val mainTools=listOf(
-                        Triple("Install",Icons.Default.InstallMobile,"apps"),
+                        Triple("Install",Icons.Default.InstallMobile,"install"),
                         Triple("Upload to Downloads",Icons.Default.UploadFile,"files"),
                         Triple("File manager",Icons.Default.FolderOpen,"files"),
-                        Triple("Channels",Icons.Default.LiveTv,"apps"),
+                        Triple("Channels",Icons.Default.LiveTv,"channels"),
                         Triple("Screen mirror",Icons.Default.CastConnected,"mirror"),
                         Triple("Gamepad",Icons.Default.SportsEsports,"gamepadFull"),
                         Triple("Screenshot",Icons.Default.PhotoCamera,"preview"),
@@ -1027,12 +1030,18 @@ fun DoupadShell(
                             }
                             Text("Appearance · ${when(appearance){"dark"->"Midnight Graphite";"bento"->"Bento Clay";else->"Handmade Light"}}",
                                 fontSize=11.sp,color=Muted)
-                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                listOf("light" to "Light", "dark" to "Dark", "bento" to "Bento Clay")
-                                    .forEach { (preset,label) ->
-                                        FilterChip(selected=appearance==preset,
-                                            onClick={onAppearanceChange(preset)},label={Text(label,fontSize=11.sp)})
-                                    }
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp),
+                                verticalAlignment=Alignment.CenterVertically) {
+                                val isDark=appearance=="dark"
+                                FilledTonalButton(onClick={onAppearanceChange(if(isDark) "light" else "dark")}) {
+                                    Icon(if(isDark)Icons.Default.WbSunny else Icons.Default.DarkMode,
+                                        null,Modifier.size(17.dp))
+                                    Spacer(Modifier.width(7.dp))
+                                    Text(if(isDark)"Switch to Light" else "Switch to Dark",fontSize=12.sp)
+                                }
+                                TextButton(onClick={onAppearanceChange("bento")}){
+                                    Text("Bento Clay",fontSize=11.sp)
+                                }
                             }
                         }
                     }
