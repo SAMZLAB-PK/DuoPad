@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -158,7 +159,9 @@ class ConnectionRepositoryImpl @Inject constructor(
     }
 
     override suspend fun connectNetworkPc(ip: String, port: Int, pin: String?): Result<Unit> {
-        disconnectAll()
+        // Bluetooth HID/ADB cleanup can involve blocking Binder/socket calls.
+        // Never do that work on Compose's main thread before the TCP handshake.
+        withContext(Dispatchers.IO) { disconnectAll() }
         _status.value = ConnectionStatus(state = ConnectionState.CONNECTING, deviceName = ip)
         val result = network.connect(ip, port, pin)
         if (result.isSuccess) {

@@ -14,6 +14,7 @@ import com.unipoint.domain.model.PcConnectionType
 import com.unipoint.domain.model.PcDevice
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -143,18 +144,25 @@ class NetworkPcDataSource constructor(
 
     suspend fun connect(ip: String, port: Int, pin: String? = null): Result<Unit> =
         withContext(Dispatchers.IO) {
+            var candidate: Socket? = null
             try {
+                // Previous control connections can leave a reader blocked. The socket
+                // must be closed first (see disconnect), before any stream close.
                 disconnect()
                 val cleanIp = ip.trim()
+                PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_TCP_START: $cleanIp:$port")
                 val s = Socket().apply {
+                    candidate = this
                     tcpNoDelay = true
                     keepAlive = true
                     soTimeout = 2500
                     connect(InetSocketAddress(cleanIp, port), 3500)
                 }
+                PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_TCP_OK: $cleanIp:$port")
                 val out = DataOutputStream(s.getOutputStream())
                 val inp = DataInputStream(s.getInputStream())
 
+                PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_IDENTITY_START: $cleanIp:$port")
                 val identity = pingIdentity(out, inp)
                     ?: run {
                         s.close()
@@ -165,6 +173,7 @@ class NetworkPcDataSource constructor(
                         s.close()
                         return@withContext Result.failure(Exception("Unsupported DuoPad Host identity"))
                     }
+                PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_IDENTITY_OK: host=${parsedIdentity.name.orEmpty().take(70)} authRequired=${parsedIdentity.authRequired}")
                 val authRequired = parsedIdentity.authRequired
                 if (authRequired && pin.isNullOrBlank()) {
                     s.close()
@@ -172,21 +181,26 @@ class NetworkPcDataSource constructor(
                 }
 
                 if (!pin.isNullOrBlank()) {
+                    PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_AUTH_START: $cleanIp:$port")
                     sendPacketTo(out, 0x10, pin.toByteArray(Charsets.UTF_8))
                     val response = readPacketFrom(inp)
                     if (response == null || response.first != 0x10.toByte() ||
                         !response.second.toString(Charsets.UTF_8).equals("OK", ignoreCase = true)
                     ) {
+                        PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_AUTH_REJECTED: check current PC Host PIN")
                         s.close()
-                        return@withContext Result.failure(Exception("Authentication failed — check PC PIN"))
+                        return@withContext Result.failure(Exception("Authentication failed — check current PC Host PIN"))
                     }
+                    PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_AUTH_OK: authenticated by Windows Host")
                 }
 
                 val verifyStart = System.currentTimeMillis()
                 if (pingIdentity(out, inp) == null) {
+                    PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_VERIFY_FAILED: no valid post-auth response")
                     s.close()
                     return@withContext Result.failure(Exception("DuoPad Host handshake failed"))
                 }
+                PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_VERIFY_OK: authenticated control channel ready")
 
                 socket = s
                 output = out
@@ -206,7 +220,13 @@ class NetworkPcDataSource constructor(
                 Log.i(tag, "Verified DuoPad Host $cleanIp:$port")
                 PcDiagnosticRecorder.note(context, "PC_CONNECTION_VERIFIED: $cleanIp:$port; latency=${latencyMs}ms; pinRequired=$authRequired")
                 Result.success(Unit)
+            } catch (e: CancellationException) {
+                runCatching { candidate?.close() }
+                disconnect()
+                PcDiagnosticRecorder.note(context, "PC_HANDSHAKE_CANCELLED: connection cancelled or timed out")
+                throw e
             } catch (e: Exception) {
+                runCatching { candidate?.close() }
                 disconnect()
                 Log.e(tag, "Connect error", e)
                 PcDiagnosticRecorder.note(context, "PC_CONNECT_FAILED: $ip:$port ${e.javaClass.simpleName}: ${e.message.orEmpty().take(160)}")
@@ -215,13 +235,15 @@ class NetworkPcDataSource constructor(
         }
 
     fun disconnect() {
-        try { output?.close() } catch (_: Exception) {}
-        try { input?.close() } catch (_: Exception) {}
-        try { socket?.close() } catch (_: Exception) {}
+        // A stream close can block while another coroutine is reading. Closing
+        // Socket FIRST unblocks both InputStream and OutputStream on Android.
+        // Do not close the streams again while a blocked read may hold a lock.
+        val staleSocket = socket
+        socket = null
         output = null
         input = null
-        socket = null
         isConnected = false
+        try { staleSocket?.close() } catch (_: Exception) {}
     }
 
     fun send(event: InputEvent) {

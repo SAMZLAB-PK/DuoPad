@@ -7,8 +7,8 @@ assert 'import android.view.WindowManager' in s
 assert s.count('window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)') == 2
 assert s.count('window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)') == 2
 assert 'override fun onPause()' in s and 'override fun onResume()' in s and 'override fun onDestroy()' in s
-assert any(x in gradle for x in ['versionCode = 20', 'versionCode = 21', 'versionCode = 22', 'versionCode = 23', 'versionCode = 24', 'versionCode = 25', 'versionCode = 26', 'versionCode = 27', 'versionCode = 28'])
-assert any(x in gradle for x in ['versionName = "0.17.0-r8"', 'versionName = "0.17.0-r9"', 'versionName = "0.17.1-r10"', 'versionName = "0.17.2-r11"', 'versionName = "0.17.3-r12"', 'versionName = "0.17.4-r13"', 'versionName = "0.17.5-r14-navigation-theme"', 'versionName = "0.18.0-r15-pc-workspace"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"'])
+assert any(x in gradle for x in ['versionCode = 20', 'versionCode = 21', 'versionCode = 22', 'versionCode = 23', 'versionCode = 24', 'versionCode = 25', 'versionCode = 26', 'versionCode = 27', 'versionCode = 28', 'versionCode = 29'])
+assert any(x in gradle for x in ['versionName = "0.17.0-r8"', 'versionName = "0.17.0-r9"', 'versionName = "0.17.1-r10"', 'versionName = "0.17.2-r11"', 'versionName = "0.17.3-r12"', 'versionName = "0.17.4-r13"', 'versionName = "0.17.5-r14-navigation-theme"', 'versionName = "0.18.0-r15-pc-workspace"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"', 'versionName = "0.18.2-r17-pc-pin-handshake"'])
 assert 'test_duopad_r7_features.py' in workflow
-assert any(x in workflow for x in ['DuoPad-Pro-v0.17.0-R8-debug.apk','DuoPad-Pro-v0.17.0-R9-debug.apk', 'DuoPad-Pro-v0.17.1-R10-debug.apk', 'DuoPad-Pro-v0.17.2-R11-debug.apk', 'DuoPad-Pro-v0.17.3-R12-debug.apk', 'DuoPad-Pro-v0.17.4-R13-debug.apk', 'DuoPad-Pro-v0.17.5-R14-debug.apk', 'DuoPad-Pro-v0.18.0-R15-debug.apk', 'DuoPad-Pro-v0.18.1-R16-debug.apk'])
+assert any(x in workflow for x in ['DuoPad-Pro-v0.17.0-R8-debug.apk','DuoPad-Pro-v0.17.0-R9-debug.apk', 'DuoPad-Pro-v0.17.1-R10-debug.apk', 'DuoPad-Pro-v0.17.2-R11-debug.apk', 'DuoPad-Pro-v0.17.3-R12-debug.apk', 'DuoPad-Pro-v0.17.4-R13-debug.apk', 'DuoPad-Pro-v0.17.5-R14-debug.apk', 'DuoPad-Pro-v0.18.0-R15-debug.apk', 'DuoPad-Pro-v0.18.2-R17-debug.apk'])
 print('DOUPAD_R7_KEEP_SCREEN_ON_LIFECYCLE_CHECKS_PASS')

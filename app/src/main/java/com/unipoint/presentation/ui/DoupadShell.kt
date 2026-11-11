@@ -1246,11 +1246,15 @@ fun DoupadShell(
                     if(localError.isNotBlank())Text(localError,color=MaterialTheme.colorScheme.error)
                     if(connectRequested && status.state==ConnectionState.CONNECTING) {
                         LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Text("Waiting for device authorization. Approve the prompt on your TV if shown…",fontSize=12.sp,color=Muted)
+                        Text(if(pc) "Connecting to Windows Host and verifying PIN…" else
+                            "Waiting for device authorization. Approve the prompt on your TV if shown…",
+                            fontSize=12.sp,color=Muted)
                     }
                     if(connectRequested && status.state==ConnectionState.ERROR) {
                         Text(status.errorMessage ?: "Connection failed. Check debugging and try again.",fontSize=12.sp,color=MaterialTheme.colorScheme.error)
-                        Text("Connection stays open here so you can read the error and retry.",fontSize=11.sp,color=Muted)
+                        Text(if(pc) "Check PC Diagnostic Logs and the Host window, then tap Retry." else
+                            "Connection stays open here so you can read the error and retry.",
+                            fontSize=11.sp,color=Muted)
                     }
                 }
                 "scan"->{
@@ -1329,7 +1333,7 @@ fun DoupadShell(
                 else->Text(output.ifBlank{"No additional details."},fontSize=13.sp)
             }
         }
-    },confirmButton={TextButton(onClick={
+    },confirmButton={TextButton(enabled=!(connectRequested && status.state==ConnectionState.CONNECTING),onClick={
         when(dialog){
             "clearSaved"->{targets=emptyList();saveTargets(context,targets);dialog=null}
             "clearLogs"->{MirrorCrashRecorder.clear(context);com.unipoint.core.util.PcDiagnosticRecorder.clear(context);dialog=null;message("Diagnostic logs cleared") }
@@ -1361,7 +1365,16 @@ fun DoupadShell(
                 else {
                     val p=port.toIntOrNull()
                     if(ip.isBlank()||ip.contains(Regex("""[\s/:]"""))||p==null||p !in 1..65535) localError="Enter a valid host and port."
-                    else { localError="";connectRequested=true;if(pc)vm.connectNetwork(ip,p,pin.ifBlank{null}) else vm.connectAndroidIp("$ip:$p") }
+                    else {
+                        localError="";connectRequested=true
+                        if(pc) vm.connectNetwork(ip,p,pin.ifBlank{null},onSuccess={
+                            connectRequested=false
+                            dialog=null
+                            page=3
+                            detail="pcWorkspace"
+                        })
+                        else vm.connectAndroidIp("$ip:$p")
+                    }
                 }
             }
             "keyboard"->{if(state.mode==AppMode.ANDROID)vm.executeAdb(AdbCommand.InputText(command)) else vm.sendText(command);dialog=null}

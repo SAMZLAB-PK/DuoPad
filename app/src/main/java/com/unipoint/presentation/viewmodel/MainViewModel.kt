@@ -5,6 +5,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import com.unipoint.core.util.PcDiagnosticRecorder
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unipoint.domain.model.*
@@ -100,17 +103,32 @@ class MainViewModel @Inject constructor(
         if (_uiState.value.connectionStatus.state == ConnectionState.CONNECTING) return@launch
         PcDiagnosticRecorder.note(context, "PC_CONNECT_REQUEST: $ip:$port, pinSupplied=${!pin.isNullOrBlank()}")
         _uiState.update { it.copy(mode = AppMode.PC) }
-        repository.connectNetworkPc(ip, port, pin)
-            .onSuccess {
-                _uiState.update { it.copy(mode = AppMode.PC) }
-                PcDiagnosticRecorder.note(context, "PC_CONNECTED: $ip:$port")
-                showMessage("Connected to PC: $ip")
-                onSuccess?.invoke()
-            }
-            .onFailure {
-                PcDiagnosticRecorder.note(context, "PC_CONNECT_ERROR: $ip:$port; ${it.javaClass.simpleName}: ${it.message.orEmpty().take(180)}")
-                showMessage(it.message ?: "Network connect failed")
-            }
+        try {
+            // Bound even a slow HID cleanup + Windows PIN handshake; the UI must
+            // never show an indefinite spinner if the host stops responding.
+            withTimeout(12_000L) { repository.connectNetworkPc(ip, port, pin) }
+                .onSuccess {
+                    _uiState.update { it.copy(mode = AppMode.PC) }
+                    PcDiagnosticRecorder.note(context, "PC_CONNECTED: $ip:$port")
+                    showMessage("Connected to PC: $ip")
+                    onSuccess?.invoke()
+                }
+                .onFailure {
+                    PcDiagnosticRecorder.note(context, "PC_CONNECT_ERROR: $ip:$port; ${it.javaClass.simpleName}: ${it.message.orEmpty().take(180)}")
+                    showMessage(it.message ?: "Network connect failed")
+                }
+        } catch (e: TimeoutCancellationException) {
+            PcDiagnosticRecorder.note(context, "PC_CONNECT_TIMEOUT: $ip:$port after 12s, check TCP/PIN and Windows Host window")
+            withContext(Dispatchers.IO) { repository.disconnectPc() }
+            showMessage("PC connection timed out. Check the Windows Host PIN and Diagnostic Logs.")
+        } catch (e: CancellationException) {
+            withContext(Dispatchers.IO) { repository.disconnectPc() }
+            throw e
+        } catch (e: Exception) {
+            PcDiagnosticRecorder.note(context, "PC_CONNECT_ERROR: $ip:$port; ${e.javaClass.simpleName}: ${e.message.orEmpty().take(180)}")
+            withContext(Dispatchers.IO) { repository.disconnectPc() }
+            showMessage("PC connection failed: ${e.message ?: "Unknown error"}")
+        }
     }
 
     fun sendMouseMove(dx: Float, dy: Float) {

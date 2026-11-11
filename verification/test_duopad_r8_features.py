@@ -7,7 +7,7 @@ shellScreen=(src/'presentation/ui/screens/android/ProControlScreens.kt').read_te
 mirror=(src/'presentation/ui/DoupadMirrorActivity.kt').read_text()
 gradle=(root/'app/build.gradle.kts').read_text()
 assert 'applicationId = "com.samzlab.duopad"' in gradle
-assert any(x in gradle for x in ['versionCode = 20', 'versionCode = 21', 'versionCode = 22', 'versionCode = 23', 'versionCode = 24', 'versionCode = 25', 'versionCode = 26', 'versionCode = 27', 'versionCode = 28']) and any(x in gradle for x in ['versionName = "0.17.0-r8"', 'versionName = "0.17.0-r9"', 'versionName = "0.17.1-r10"', 'versionName = "0.17.2-r11"', 'versionName = "0.17.3-r12"', 'versionName = "0.17.4-r13"', 'versionName = "0.17.5-r14-navigation-theme"', 'versionName = "0.18.0-r15-pc-workspace"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"'])
+assert any(x in gradle for x in ['versionCode = 20', 'versionCode = 21', 'versionCode = 22', 'versionCode = 23', 'versionCode = 24', 'versionCode = 25', 'versionCode = 26', 'versionCode = 27', 'versionCode = 28', 'versionCode = 29']) and any(x in gradle for x in ['versionName = "0.17.0-r8"', 'versionName = "0.17.0-r9"', 'versionName = "0.17.1-r10"', 'versionName = "0.17.2-r11"', 'versionName = "0.17.3-r12"', 'versionName = "0.17.4-r13"', 'versionName = "0.17.5-r14-navigation-theme"', 'versionName = "0.18.0-r15-pc-workspace"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"', 'versionName = "0.18.2-r17-pc-pin-handshake"'])
 assert 'DropdownMenu(' in app and 'expandedAppMenu' in app
 assert 'Text("Force stop")' in app and 'Text("Uninstall"' in app
 assert 'modifier=modifier.height(94.dp)' in shell

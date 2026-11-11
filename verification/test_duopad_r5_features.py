@@ -30,6 +30,6 @@ assert 'current.visibilityMonitor.observe(' in mirror
 assert 'scheduleVisibleVideoSample(ticket,current,1500L)' in mirror
 assert 'VideoProfile(640,24,1_200_000,true,true,null,true)' in mirror
 assert 'videoEncoder' not in mirror  # avoid accidental bogus argument
-assert any(token in build for token in ['versionCode = 18', 'versionCode = 19', 'versionCode = 20', 'versionCode = 21', 'versionCode = 22', 'versionCode = 23', 'versionCode = 24', 'versionCode = 25', 'versionCode = 26', 'versionCode = 27', 'versionCode = 28'])
+assert any(token in build for token in ['versionCode = 18', 'versionCode = 19', 'versionCode = 20', 'versionCode = 21', 'versionCode = 22', 'versionCode = 23', 'versionCode = 24', 'versionCode = 25', 'versionCode = 26', 'versionCode = 27', 'versionCode = 28', 'versionCode = 29'])
 assert 'applicationId = "com.samzlab.duopad"' in build
 print('DOUPAD_R5_UI_SAVED_THEME_DIAGNOSTICS_MIRROR_SOURCE_PASS')
