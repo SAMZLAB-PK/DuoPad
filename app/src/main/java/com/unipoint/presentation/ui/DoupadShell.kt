@@ -283,7 +283,7 @@ fun DoupadShell(
     LaunchedEffect(dialog,pc,pcTransport) {
         if(dialog=="connect" && pc && pcTransport=="wifi") vm.scanPc()
     }
-    LaunchedEffect(Unit) { vm.scanNearby() }
+    LaunchedEffect(Unit) { vm.scanAndroid() }
     BackHandler(detail!=null||page!=4||dialog!=null){if(dialog!=null)dialog=null else if(detail!=null)detail=null else page=4}
     val back={detail=null}
     when(detail) {
@@ -605,7 +605,11 @@ fun DoupadShell(
                     }
                     if(state.isScanning || state.isScanningPc){
                         LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Text("Searching without ADB authentication…",fontSize=12.sp,color=Muted)
+                        Text(if(state.isScanningPc) "Searching for PC Host (up to 15 seconds)…" else "Searching for Android TVs…",
+                            fontSize=12.sp,color=Muted)
+                    }
+                    if(scanFilter=="PC" && !state.isScanningPc && state.pcScanMessage!=null){
+                        Text(state.pcScanMessage!!,fontSize=12.sp,color=Muted)
                     }
                     val androidFound=state.androidDevices.distinctBy { it.id }
                     val pcFound=state.pcDevices.distinctBy { it.id }
@@ -674,11 +678,21 @@ fun DoupadShell(
                             }
                         }
                     }
-                    OutlinedButton(onClick={vm.scanNearby()},modifier=Modifier.fillMaxWidth()){
-                        Icon(Icons.Default.Refresh,null);Text("  Scan again")
+                    OutlinedButton(
+                        onClick={ if(scanFilter=="PC") vm.scanPc() else vm.scanNearby() },
+                        enabled=if(scanFilter=="PC") !state.isScanningPc else !state.isScanning && !state.isScanningPc,
+                        modifier=Modifier.fillMaxWidth()
+                    ){
+                        Icon(Icons.Default.Refresh,null)
+                        Text("  " + if(scanFilter=="PC") {
+                            if(state.hasScannedPc) "Search Again" else "Search PC"
+                        } else "Scan again")
                     }
-                    OutlinedButton(onClick={pc=false;port="5555";dialog="connect"},modifier=Modifier.fillMaxWidth()){
-                        Icon(Icons.Default.Add,null);Text("  Connect by IP")
+                    OutlinedButton(onClick={
+                        pc=scanFilter=="PC"; pcTransport="wifi";
+                        port=if(pc) "27845" else "5555"; dialog="connect"
+                    },modifier=Modifier.fillMaxWidth()){
+                        Icon(Icons.Default.Add,null);Text(if(scanFilter=="PC") "  Connect PC by IP" else "  Connect by IP")
                     }
                     Surface(onClick={detail="mirrorLog"},modifier=Modifier.fillMaxWidth(),
                         shape=RoundedCornerShape(19.dp),color=Pale,border=BorderStroke(1.dp,Border)) {
@@ -687,7 +701,7 @@ fun DoupadShell(
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("Diagnostic logs",fontWeight=FontWeight.Bold,color=Ink)
-                                Text("Review or clear mirror logs",fontSize=11.sp,color=Muted)
+                                Text("PC discovery, connections, mirror events and errors",fontSize=11.sp,color=Muted)
                             }
                             TextButton(onClick={dialog="clearLogs"},contentPadding=PaddingValues(4.dp)) {
                                 Icon(Icons.Default.DeleteOutline,"Clear old diagnostic logs",Modifier.size(18.dp),tint=Teal)
@@ -1211,7 +1225,9 @@ fun DoupadShell(
                                         Text("DuoPad Pro Host required for Wi-Fi",fontWeight=FontWeight.Bold)
                                         Text("Bluetooth Direct works without any PC software. For Wi-Fi control, run the small DuoPad Pro Host on Windows, macOS or Linux.",fontSize=12.sp,color=Muted)
                                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                            OutlinedButton(onClick={vm.scanPc()},modifier=Modifier.weight(1f)){Text("Scan again")}
+                                            OutlinedButton(onClick={vm.scanPc()},enabled=!state.isScanningPc,modifier=Modifier.weight(1f)){
+                                                Text(if(state.hasScannedPc) "Search Again" else "Search PC")
+                                            }
                                             Button(onClick={
                                                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.HOST_RELEASES_URL))) }
                                                     .onFailure { message("Could not open the DuoPad Pro Host download page.") }
@@ -1316,7 +1332,7 @@ fun DoupadShell(
     },confirmButton={TextButton(onClick={
         when(dialog){
             "clearSaved"->{targets=emptyList();saveTargets(context,targets);dialog=null}
-            "clearLogs"->{MirrorCrashRecorder.clear(context);dialog=null;message("Old mirror logs cleared") }
+            "clearLogs"->{MirrorCrashRecorder.clear(context);com.unipoint.core.util.PcDiagnosticRecorder.clear(context);dialog=null;message("Diagnostic logs cleared") }
             "saveDevice"->{
                 pendingSaveTarget?.let { target ->
                     targets=listOf(target)+targets.filterNot { it.endpoint==target.endpoint }

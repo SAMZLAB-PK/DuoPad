@@ -5,6 +5,7 @@ import android.util.Log
 import com.unipoint.core.network.PcConnectionHistoryCodec
 import com.unipoint.core.network.PcDiscoveryPolicy
 import com.unipoint.core.network.PcDiscoveryProtocol
+import com.unipoint.core.util.PcDiagnosticRecorder
 import com.unipoint.core.network.PcHistoryEntry
 import com.unipoint.core.network.PcHostIdentity
 import com.unipoint.domain.model.InputEvent
@@ -53,6 +54,8 @@ class NetworkPcDataSource constructor(
         val found = linkedMapOf<String, PcDevice>()
         val history = historyEntries()
         val local = localSubnets()
+        PcDiagnosticRecorder.note(context,
+            "PC_DISCOVERY_START: subnets=${local.joinToString(",").ifBlank { "unknown" }}; saved=${history.size}; tcpPort=$port udpPort=${PcDiscoveryProtocol.UDP_PORT}")
 
         // 1) PalmPoint-style remembered PCs are visible immediately, even if currently offline.
         history.forEach { saved ->
@@ -89,13 +92,16 @@ class NetworkPcDataSource constructor(
         }
 
         // 2) Multi-round broadcast discovery: limited broadcast + interface/directed broadcasts.
+        PcDiagnosticRecorder.note(context, "PC_DISCOVERY_UDP_BEGIN: 3 rounds on port ${PcDiscoveryProtocol.UDP_PORT}")
         udpDiscover(local).forEach { device -> found[device.id] = device }
+        PcDiagnosticRecorder.note(context, "PC_DISCOVERY_UDP_END: found=${found.values.count { it.isReachable }}")
         if (found.values.any { it.isReachable }) return@withContext sortDevices(found.values)
 
         // 3) TCP fallback on the actual LAN subnet, plus the last known subnet if it changed.
         val lastHost = history.firstOrNull()?.host ?: prefs.getString("last_pc", null)?.substringBefore(':')
         val subnets = PcDiscoveryPolicy.candidateSubnets(local, lastHost).take(4)
         val priority = listOf(1, 2, 5, 10, 20, 50, 100, 101, 150, 200, 254)
+        PcDiagnosticRecorder.note(context, "PC_DISCOVERY_TCP_BEGIN: candidateSubnets=${subnets.joinToString()}; prioritizing common host IPs")
         for (subnet in subnets) {
             coroutineScope {
                 priority.map { end ->
@@ -113,6 +119,7 @@ class NetworkPcDataSource constructor(
         if (found.values.any { it.isReachable }) return@withContext sortDevices(found.values)
 
         // 4) Exhaustive scan is last resort only, and never wastes time on unrelated default subnets.
+        PcDiagnosticRecorder.note(context, "PC_DISCOVERY_FULL_SCAN: no quick result; scanning up to 2 LAN subnets")
         for (subnet in subnets.take(2)) {
             (1..254).filterNot { it in priority }.chunked(56).forEach { chunk ->
                 coroutineScope {
@@ -130,6 +137,7 @@ class NetworkPcDataSource constructor(
                 if (found.values.any { it.isReachable }) return@withContext sortDevices(found.values)
             }
         }
+        PcDiagnosticRecorder.note(context, "PC_DISCOVERY_END: online=${found.values.count { it.isReachable }} saved=${found.values.count { it.isSaved }}")
         sortDevices(found.values)
     }
 
@@ -196,10 +204,12 @@ class NetworkPcDataSource constructor(
                     )
                 )
                 Log.i(tag, "Verified DuoPad Host $cleanIp:$port")
+                PcDiagnosticRecorder.note(context, "PC_CONNECTION_VERIFIED: $cleanIp:$port; latency=${latencyMs}ms; pinRequired=$authRequired")
                 Result.success(Unit)
             } catch (e: Exception) {
                 disconnect()
                 Log.e(tag, "Connect error", e)
+                PcDiagnosticRecorder.note(context, "PC_CONNECT_FAILED: $ip:$port ${e.javaClass.simpleName}: ${e.message.orEmpty().take(160)}")
                 Result.failure(Exception("PC connect failed: ${e.message}", e))
             }
         }
@@ -342,6 +352,7 @@ class NetworkPcDataSource constructor(
                 val inp = DataInputStream(s.getInputStream())
                 val identityText = pingIdentity(out, inp) ?: return null
                 val identity = PcHostIdentity.parse(identityText) ?: return null
+                PcDiagnosticRecorder.note(context, "PC_HOST_FOUND: $ip:$port name=${identity.name.orEmpty().take(70)} pinRequired=${identity.authRequired}")
                 PcDevice(
                     id = "$ip:$port",
                     name = (identity.name ?: "DuoPad PC") + if (identity.authRequired) " (PIN)" else "",

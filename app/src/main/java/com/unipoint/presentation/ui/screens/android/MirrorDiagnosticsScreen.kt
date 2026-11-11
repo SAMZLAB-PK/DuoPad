@@ -4,6 +4,7 @@ import android.content.ClipData
 import com.unipoint.presentation.ui.theme.DuoColors
 import android.content.ClipboardManager
 import android.content.Context
+import com.unipoint.core.util.PcDiagnosticRecorder
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.os.Build
@@ -54,17 +55,19 @@ fun MirrorDiagnosticsScreen(onBack:()->Unit) {
                     }.ifBlank { "No historical process exits" }
             }.getOrDefault("Exit reasons unavailable on this device")
         } else "Android OS exit reasons require Android 11+"
-        "MIRROR EVENT LOG\n$breadcrumbs\n\nANDROID PROCESS EXIT HISTORY\n$previousExits"
+        val pcLog = runCatching { PcDiagnosticRecorder.file(context).readText().takeLast(16000) }
+            .getOrDefault("No PC scan/connection logs yet. Tap Search PC to start diagnostics.")
+        "PC DISCOVERY AND CONNECTION LOG\n$pcLog\n\nMIRROR EVENT LOG\n$breadcrumbs\n\nANDROID PROCESS EXIT HISTORY\n$previousExits"
     }
     Scaffold(
         topBar={
             TopAppBar(
-                title={Text("Mirror diagnostics")},
+                title={Text("Diagnostic logs")},
                 navigationIcon={IconButton(onClick=onBack){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Back")}},
                 actions={
                     IconButton(onClick={refresh++}){Icon(Icons.Default.Refresh,"Refresh")}
                     IconButton(onClick={confirmClear=true}){
-                        Icon(Icons.Default.DeleteOutline,"Clear old mirror logs")
+                        Icon(Icons.Default.DeleteOutline,"Clear PC and mirror logs")
                     }
                 }
             )
@@ -73,10 +76,11 @@ fun MirrorDiagnosticsScreen(onBack:()->Unit) {
         if(confirmClear) {
             AlertDialog(
                 onDismissRequest={confirmClear=false},
-                title={Text("Clear mirror logs?")},
-                text={Text("Deletes the app's local mirror event log. Android system process-exit history is maintained by the OS and cannot be deleted here.")},
+                title={Text("Clear diagnostic logs?")},
+                text={Text("Deletes the local PC connection/discovery and mirror logs. Android process-exit history is managed by the OS.")},
                 confirmButton={TextButton(onClick={
                     com.unipoint.core.util.MirrorCrashRecorder.clear(context)
+                    PcDiagnosticRecorder.clear(context)
                     refresh++
                     confirmClear=false
                 }){Text("Clear logs")}},
@@ -85,12 +89,12 @@ fun MirrorDiagnosticsScreen(onBack:()->Unit) {
         }
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp),
             verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("Shows startup breadcrumbs, encoder/decoder events and Android process exits, even when the video screen closes unexpectedly. Data stays on this phone.",
+            Text("Shows PC scan phases, found hosts, connection errors, mirror events, and Android process exits. Logs stay on this phone; passwords and PINs are never logged.",
                 style=MaterialTheme.typography.bodySmall,color=DuoColors.OnSurfaceMuted)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
                 Button(onClick={
                     val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("DuoPad mirror diagnostics",diagnostics))
+                    clipboard.setPrimaryClip(ClipData.newPlainText("DuoPad diagnostics",diagnostics))
                 },modifier=Modifier.weight(1f)){
                     Icon(Icons.Default.ContentCopy,null)
                     Spacer(Modifier.width(6.dp))

@@ -46,22 +46,8 @@ fun DeviceListScreen(
     var securePc by remember { mutableStateOf<PcDevice?>(null) }
     var pcPin by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
-        viewModel.scanAndroid()
-        viewModel.scanPc()
-        // A second quick pass catches a PC Host that was still starting up with the app.
-        delay(2400)
-        if (uiState.pcDevices.isEmpty()) viewModel.scanPc()
-    }
-
-    LaunchedEffect(uiState.pcDevices.isEmpty()) {
-        if (uiState.pcDevices.isEmpty()) {
-            repeat(3) {
-                delay(6000)
-                viewModel.scanPc()
-            }
-        }
-    }
+    // PC discovery is opt-in from Search PC; no endless background retries/spinner.
+    LaunchedEffect(Unit) { viewModel.scanAndroid() }
 
     LaunchedEffect(uiState.connectionStatus.state, uiState.mode) {
         if (uiState.connectionStatus.state == ConnectionState.CONNECTED && uiState.mode == AppMode.ANDROID) {
@@ -188,8 +174,8 @@ fun DeviceListScreen(
                         EmptyDeviceCard(
                             icon = Icons.Default.Computer,
                             title = if (uiState.isScanningPc) "Looking for DuoPad Host…" else "No PC Host detected",
-                            subtitle = "Start DuoPad Host on the PC. Auto-discovery, saved PCs and QR pairing are supported.",
-                            actionLabel = "Scan again",
+                            subtitle = uiState.pcScanMessage ?: "Start DuoPad Host on Windows. Search, or connect manually by PC IP.",
+                            actionLabel = if (uiState.hasScannedPc) "Search Again" else "Search PC",
                             onAction = { viewModel.scanPc() }
                         )
                     }

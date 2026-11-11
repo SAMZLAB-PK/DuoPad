@@ -1,5 +1,10 @@
 package com.unipoint.presentation.viewmodel
 
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import com.unipoint.core.util.PcDiagnosticRecorder
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unipoint.domain.model.*
@@ -16,12 +21,15 @@ data class MainUiState(
     val pcDevices: List<PcDevice> = emptyList(),
     val isScanning: Boolean = false,
     val isScanningPc: Boolean = false,
+    val hasScannedPc: Boolean = false,
+    val pcScanMessage: String? = null,
     val snackbarMessage: String? = null
 )
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val repository: ConnectionRepository
+    private val repository: ConnectionRepository,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -58,10 +66,24 @@ class MainViewModel @Inject constructor(
 
     fun scanPc() = viewModelScope.launch {
         if (_uiState.value.isScanningPc) return@launch
-        _uiState.update { it.copy(isScanningPc = true) }
-        runCatching { repository.scanNetworkPcs() }
-            .onFailure { showMessage(it.message ?: "PC scan failed") }
-        _uiState.update { it.copy(isScanningPc = false) }
+        _uiState.update { it.copy(isScanningPc = true, pcScanMessage = "Searching for PC Host…") }
+        PcDiagnosticRecorder.note(context, "PC_SCAN_REQUEST: user requested nearby Windows Host scan")
+        try {
+            withTimeout(15000L) { repository.scanNetworkPcs() }
+            val online = _uiState.value.pcDevices.count { it.isReachable }
+            val message = if (online > 0) "$online PC Host(s) found" else
+                "No PC Host found. Start DuoPad PC Host, allow Windows firewall, or connect by IP."
+            PcDiagnosticRecorder.note(context, "PC_SCAN_COMPLETE: online=$online")
+            _uiState.update { it.copy(pcScanMessage = message) }
+        } catch (e: TimeoutCancellationException) {
+            PcDiagnosticRecorder.note(context, "PC_SCAN_TIMEOUT: exceeded 15s; check network, Host and firewall")
+            _uiState.update { it.copy(pcScanMessage = "Search timed out after 15s. Check PC Host and firewall.") }
+        } catch (e: Exception) {
+            PcDiagnosticRecorder.note(context, "PC_SCAN_ERROR: ${e.javaClass.simpleName}: ${e.message.orEmpty().take(200)}")
+            _uiState.update { it.copy(pcScanMessage = "PC search failed: ${e.message ?: "Unknown error"}") }
+        } finally {
+            _uiState.update { it.copy(isScanningPc = false, hasScannedPc = true) }
+        }
     }
 
     fun connectBluetooth() = viewModelScope.launch {
@@ -76,14 +98,19 @@ class MainViewModel @Inject constructor(
         onSuccess: (() -> Unit)? = null
     ) = viewModelScope.launch {
         if (_uiState.value.connectionStatus.state == ConnectionState.CONNECTING) return@launch
+        PcDiagnosticRecorder.note(context, "PC_CONNECT_REQUEST: $ip:$port, pinSupplied=${!pin.isNullOrBlank()}")
         _uiState.update { it.copy(mode = AppMode.PC) }
         repository.connectNetworkPc(ip, port, pin)
             .onSuccess {
                 _uiState.update { it.copy(mode = AppMode.PC) }
+                PcDiagnosticRecorder.note(context, "PC_CONNECTED: $ip:$port")
                 showMessage("Connected to PC: $ip")
                 onSuccess?.invoke()
             }
-            .onFailure { showMessage(it.message ?: "Network connect failed") }
+            .onFailure {
+                PcDiagnosticRecorder.note(context, "PC_CONNECT_ERROR: $ip:$port; ${it.javaClass.simpleName}: ${it.message.orEmpty().take(180)}")
+                showMessage(it.message ?: "Network connect failed")
+            }
     }
 
     fun sendMouseMove(dx: Float, dy: Float) {
