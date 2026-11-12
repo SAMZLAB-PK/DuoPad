@@ -12,7 +12,7 @@ assert any(x in gradle for x in ['versionCode = 27', 'versionCode = 28', 'versio
 assert any(x in gradle for x in ['versionName = "0.18.0-r15-pc-workspace"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"', 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.6-r21-pc-host-pro"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"', 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.6-r21-pc-host-pro"'])
 assert 'PcWorkspaceService' in server and 'secrets.randbelow(100_000_000)' in server
 assert 'client_ip.is_private or client_ip.is_loopback' in server
-assert 'parser.add_argument("--no-pin"' in server
+assert 'if pin is None or len(pin) < 8:' in server  # R21 Host requires pairing PIN
 assert 'ptype in (0x30, 0x31, 0x32, 0x33, 0x34, 0x40' in server
 assert '0x33' in workspace and '0x34' in workspace and '0x40' in workspace
 assert 'tempfile.NamedTemporaryFile' in workspace and 'MAX_FILE_BYTES' in workspace
