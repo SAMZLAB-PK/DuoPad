@@ -7,7 +7,7 @@ sharing=(root/'app/src/main/java/com/unipoint/presentation/ui/DuoPadHostShare.kt
 workflow=(root/'.github/workflows/build-apk.yml').read_text()
 gradle=(root/'app/build.gradle.kts').read_text()
 assert 'pcWorkspaceTab=label; detail="pcWorkspace"' in shell
-assert 'pcWorkspaceTab="Files"' in shell and 'pcWorkspaceTab="Info"' in shell
+assert 'pcWorkspaceTab="Workspace"' in shell and 'pcWorkspaceTab=label' in shell
 assert 'initialTab=pcWorkspaceTab' in shell and 'rememberSaveable(initialTab)' in workspace
 assert 'PC_WORKSPACE_' in client and 'INFO_OK' in client and 'DRIVES_OK' in client
 assert 'SCREEN_FRAME_OK' in client and 'REQUEST_FAILED' in client
