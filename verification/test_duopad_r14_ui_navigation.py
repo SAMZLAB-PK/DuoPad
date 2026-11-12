@@ -22,8 +22,8 @@ assert 'AdbCommand.Install(copied.absolutePath)' in new
 assert 'fun ChannelManagerScreen(' in new and 'KEYCODE' not in new
 assert all(f'key({k})' in new for k in (170,178,172,167,166))
 assert '"monkey -p ${app.packageName}' in new
-assert 'versionCode = 30' in build and 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.3-r18-pc-workspace-qr-host-share"' in build
+assert 'versionCode = 31' in build and 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.4-r19-branded-header"' in build
 assert 'applicationId = "com.samzlab.duopad"' in build
 assert 'test_duopad_r14_ui_navigation.py' in w
-assert 'DuoPad-Pro-v0.18.3-R18-debug.apk' in w
+assert 'DuoPad-Pro-v0.18.4-R19-debug.apk' in w
 print('R14_UI_NAVIGATION_THEME_BRANDING_PASS')

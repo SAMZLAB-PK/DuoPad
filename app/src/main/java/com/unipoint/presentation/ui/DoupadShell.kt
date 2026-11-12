@@ -85,6 +85,59 @@ private fun saveTargets(context:Context,items:List<Target>) {
     context.getSharedPreferences("doupad",0).edit().putString("targets",a.toString()).apply()
 }
 
+/** Reusable DuoPad header matching the user's original D-logo and DOUPAD title. */
+@Composable
+private fun DuoPadBrandHeader(
+    onMore: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().heightIn(min = 57.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp)
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.ic_launcher),
+            contentDescription = "Original DuoPad D logo",
+            modifier = Modifier.size(49.dp)
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = "DOUPAD",
+                fontSize = 27.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.SansSerif,
+                letterSpacing = (-0.75).sp,
+                lineHeight = 30.sp,
+                color = Ink,
+                maxLines = 1
+            )
+            Text(
+                text = "Control your PC & TV from your phone",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Normal,
+                fontFamily = FontFamily.SansSerif,
+                letterSpacing = (-0.18).sp,
+                lineHeight = 12.sp,
+                color = Muted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        IconButton(onClick = onMore, modifier = Modifier.size(34.dp)) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "DuoPad menu",
+                tint = Ink,
+                modifier = Modifier.size(25.dp)
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DoupadShell(
@@ -399,32 +452,10 @@ fun DoupadShell(
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=15.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             when(page) {
                 0->{
-                    // Pixel-proportion reference: monochrome header, status, two
-                    // real device rows and exactly four actions. No demo data.
-                    Row(
-                        Modifier.fillMaxWidth().padding(top=8.dp,bottom=3.dp),
-                        verticalAlignment=Alignment.CenterVertically,
-                        horizontalArrangement=Arrangement.spacedBy(10.dp)
-                    ) {
-                        Image(
-                            painter=painterResource(id=R.drawable.ic_launcher),
-                            contentDescription="DuoPad app logo",
-                            modifier=Modifier.size(45.dp)
-                        )
-                        Column(Modifier.weight(1f),
-                            verticalArrangement=Arrangement.spacedBy(1.dp)) {
-                            Text("DuoPad",fontSize=22.sp,
-                                fontWeight=FontWeight.Black,color=Ink,
-                                letterSpacing=(-0.65).sp,lineHeight=23.sp)
-                            Text("Control your PC & TV from your phone",
-                                fontSize=10.sp,color=Ink,
-                                fontWeight=FontWeight.Medium,maxLines=1)
-                        }
-                        IconButton(onClick={page=5},modifier=Modifier.size(36.dp)){
-                            Icon(Icons.Default.MoreVert,"Settings",
-                                tint=Ink,modifier=Modifier.size(22.dp))
-                        }
-                    }
+                    DuoPadBrandHeader(
+                        onMore = { page = 5 },
+                        modifier = Modifier.padding(top = 8.dp, bottom = 3.dp)
+                    )
 
                     Surface(
                         modifier=Modifier.fillMaxWidth().height(48.dp),
@@ -577,29 +608,29 @@ fun DoupadShell(
                     }
                 }
                 4->{
-                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
-                        horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                        // Preserve the original DuoPad D-logo; pair it with the
-                        // name on the landing screen rather than using text alone.
-                        Image(painter=painterResource(R.drawable.ic_launcher),
-                            contentDescription="Original DuoPad logo",modifier=Modifier.size(39.dp))
-                        Text("DuoPad",fontSize=27.sp,fontWeight=FontWeight.Bold,color=Ink,
-                            fontFamily=FontFamily.Serif,modifier=Modifier.weight(1f))
-                        val currentlyDark=appearance=="dark"
+                    DuoPadBrandHeader(
+                        onMore = { dialog = "settings" },
+                        modifier = Modifier.padding(top = 2.dp, bottom = 2.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        val currentlyDark = appearance == "dark"
                         FilledTonalButton(
-                            onClick={onAppearanceChange(if(currentlyDark) "light" else "dark")},
-                            shape=RoundedCornerShape(18.dp),
-                            contentPadding=PaddingValues(horizontal=13.dp,vertical=7.dp),
-                            modifier=Modifier.height(38.dp)
+                            onClick = { onAppearanceChange(if (currentlyDark) "light" else "dark") },
+                            shape = RoundedCornerShape(18.dp),
+                            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 7.dp),
+                            modifier = Modifier.height(36.dp)
                         ) {
-                            Icon(if(currentlyDark) Icons.Default.WbSunny else Icons.Default.DarkMode,
-                                if(currentlyDark) "Switch to light theme" else "Switch to dark theme",
-                                modifier=Modifier.size(18.dp))
+                            Icon(
+                                if (currentlyDark) Icons.Default.WbSunny else Icons.Default.DarkMode,
+                                if (currentlyDark) "Switch to light theme" else "Switch to dark theme",
+                                modifier = Modifier.size(18.dp)
+                            )
                             Spacer(Modifier.width(6.dp))
-                            Text(if(currentlyDark) "Light" else "Dark",fontSize=12.sp)
+                            Text(if (currentlyDark) "Light" else "Dark", fontSize = 12.sp)
                         }
-                        // The old search/refresh icon is intentionally removed.
-                        // Users still have Scan again at the end of device list.
                     }
                     Text("Last connected",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink)
                     val lastConnected=targets.firstOrNull()

@@ -21,6 +21,6 @@ for f in ['host/python/unipoint_host.py','host/python/pc_workspace.py','host/pyt
           'host/windows/Install-and-Run-DOUPAD.bat','host/windows/Run-DOUPAD-Host.bat',
           'host/windows/SETUP-FIREWALL-ONCE.bat','host/WINDOWS-SETUP.md']:
     assert (root/'app/src/main/assets/pc-host'/f).read_bytes()==(root/f).read_bytes(), f
-assert 'versionCode = 30' in gradle
+assert 'versionCode = 31' in gradle
 assert 'test_duopad_r18_workspace_host_share.py' in workflow
 print('R18_PC_WORKSPACE_QR_SHARE_CHECKS_PASS')

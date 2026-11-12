@@ -75,16 +75,18 @@ class PcWorkspaceClient(
         if (socket?.isConnected == true && socket?.isClosed == false) return
         close()
         log("TCP_START")
-        val conn = Socket().apply {
-            tcpNoDelay = true
-            soTimeout = 8000
-            connect(InetSocketAddress(host, port), 4000)
-        }
-        log("TCP_OK")
-        socket = conn
-        reader = DataInputStream(conn.getInputStream())
-        writer = DataOutputStream(conn.getOutputStream())
+        // Control channel can succeed while this separate Workspace socket fails.
+        // Include TCP failures in diagnostics and always close partial sockets.
+        val conn = Socket()
         try {
+            conn.tcpNoDelay = true
+            conn.keepAlive = true
+            conn.soTimeout = 7000
+            conn.connect(InetSocketAddress(host, port), 3500)
+            log("TCP_OK local=${conn.localAddress.hostAddress}:${conn.localPort}")
+            socket = conn
+            reader = DataInputStream(conn.getInputStream())
+            writer = DataOutputStream(conn.getOutputStream())
             log("IDENTITY_START")
             writePacket(0x20)
             val identity = String(readPacket(0x20), Charsets.UTF_8)
@@ -104,8 +106,9 @@ class PcWorkspaceClient(
             log("READY")
         } catch (error: Exception) {
             log("CONNECT_FAILED ${error.javaClass.simpleName}: ${error.message.orEmpty().take(160)}")
+            runCatching { conn.close() }
             close()
-            throw error
+            throw IOException("PC Workspace ${error.javaClass.simpleName}: ${error.message ?: "Connection failed"}", error)
         }
     }
 
