@@ -17,7 +17,7 @@ assert 'reconnectAttempts < 3' in shell
 assert 'saveTargets(context,targets)' in shell
 assert 'val previous=targets.firstOrNull' in shell
 assert 'TextButton(onClick={onAppearanceChange("bento")})' in shell
-assert 'val currentlyDark=appearance=="dark"' in shell
+assert 'val currentlyDark = appearance == "dark"' in shell
 assert 'appearancePrefs.edit().putString("appearance"' in main
 assert 'HandmadeLight' in theme and 'GraphiteDark' in theme and 'BentoClayLight' in theme
 assert (java/'presentation/ui/theme/Color.kt').exists()
