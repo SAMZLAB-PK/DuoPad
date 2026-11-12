@@ -18,7 +18,7 @@ assert 'WindowInsetsCompat.Type.statusBars()' in workspace
 assert 'rememberSaveable(initialTab)' in workspace
 assert 'BackHandler(tab == "Screen")' in workspace
 assert 'ContentScale.Fit' in workspace
-assert 'Installed Memory' in workspace and 'Available RAM' in workspace
+assert 'Installed RAM' in workspace and 'Free memory' in workspace  # R21 professional memory cards
 assert '%.1f GB' in workspace
 assert 'PC_JAVA_CRASH' in rec
 assert 'versionCode = 33' in gradle and '0.18.6-r21-pc-host-pro' in gradle
