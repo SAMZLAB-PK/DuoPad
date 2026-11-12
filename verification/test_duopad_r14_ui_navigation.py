@@ -13,9 +13,9 @@ assert 'if(isTv) {page=3;detail="install"}' in shell
 assert 'Triple("Install",Icons.Default.InstallMobile,"apps")' not in shell
 assert 'Triple("Channels",Icons.Default.LiveTv,"apps")' not in shell
 assert 'val currentlyDark = appearance == "dark"' in shell
-assert 'onClick={onAppearanceChange(if(currentlyDark) "light" else "dark")}' in shell
+assert 'onClick = { onAppearanceChange(if (currentlyDark) "light" else "dark") }' in shell
 assert 'IconButton(onClick={vm.scanNearby()}){Icon(Icons.Default.Refresh,"Refresh",tint=Ink)}' not in shell
-assert 'contentDescription="Original DuoPad logo"' in shell
+assert 'contentDescription = "Original DuoPad D logo"' in shell
 assert 'painterResource(R.drawable.ic_launcher)' in shell
 assert 'fun InstallApkScreen(' in new and 'ActivityResultContracts.OpenDocument()' in new
 assert 'AdbCommand.Install(copied.absolutePath)' in new
