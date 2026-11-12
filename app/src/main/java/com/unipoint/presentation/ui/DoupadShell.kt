@@ -158,7 +158,7 @@ fun DoupadShell(
     var ip by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("5555") }
     var pin by remember { mutableStateOf("") }
-    var pcWorkspaceTab by rememberSaveable { mutableStateOf("Screen") }
+    var pcWorkspaceTab by rememberSaveable { mutableStateOf("Workspace") }
     var pc by remember { mutableStateOf(false) }
     var pcTransport by rememberSaveable { mutableStateOf("bluetooth") }
     var localError by remember { mutableStateOf("") }
@@ -177,6 +177,7 @@ fun DoupadShell(
     var pendingSaveTarget by remember { mutableStateOf<Target?>(null) }
     var lastPromptedEndpoint by remember { mutableStateOf<String?>(null) }
     var automaticReconnect by remember { mutableStateOf(true) }
+    var pcAutoAttempted by rememberSaveable { mutableStateOf(false) }
     var reconnectAttempts by remember { mutableIntStateOf(0) }
 
     val status=state.connectionStatus
@@ -194,7 +195,7 @@ fun DoupadShell(
                 ip=endpoint.host; port=endpoint.port.toString(); pin=endpoint.pin.orEmpty()
                 connectRequested=true; dialog=null
                 vm.connectNetwork(endpoint.host,endpoint.port,endpoint.pin,onSuccess={
-                    connectRequested=false; dialog=null; pcWorkspaceTab="Info"; page=3; detail="pcWorkspace"
+                    connectRequested=false; dialog=null; pcWorkspaceTab="Workspace"; page=3; detail="pcWorkspace"
                 })
             }
         }
@@ -205,6 +206,7 @@ fun DoupadShell(
             setPrompt("Scan the QR shown by DuoPad PC Host")
             setBeepEnabled(false)
             setOrientationLocked(true)
+            setCaptureActivity(DuoPadPortraitCaptureActivity::class.java)
         })
     }
     val discoverableLauncher=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
@@ -307,7 +309,7 @@ fun DoupadShell(
                 vm.connectNetwork(ip,port.toIntOrNull()?:27845,trustedPin,onSuccess={
                     connectRequested=false
                     dialog=null
-                    pcWorkspaceTab="Info"
+                    pcWorkspaceTab="Workspace"
                     page=3
                     detail="pcWorkspace"
                 })
@@ -385,10 +387,14 @@ fun DoupadShell(
             val port=target.endpoint.substringAfter(':',if(target.pc) "27845" else "5555").toIntOrNull()
             if(port!=null) {
                 if(target.pc){
+                    // One automatic attempt on launch, then repository owns reconnect.
+                    // Prevent simultaneous handshakes and reconnection storms.
+                    if(pcAutoAttempted) return@LaunchedEffect
+                    pcAutoAttempted=true
                     val trustedPin=TrustedPcPairing.read(context,target.endpoint) ?: return@LaunchedEffect
                     pin=trustedPin;pc=true;pcTransport="wifi"
                     vm.connectNetwork(host,port,trustedPin,onSuccess={
-                        pcWorkspaceTab="Info";page=3;detail="pcWorkspace"
+                        pcWorkspaceTab="Workspace";page=3;detail="pcWorkspace"
                     })
                 } else vm.connectAndroidIp("$host:$port")
             }
@@ -429,7 +435,7 @@ fun DoupadShell(
         "mirrorLog"->{MirrorDiagnosticsScreen(onBack=back);return}
         "gamepadFull"->{AndroidGamepadScreen(onBack=back);return}
         "mappingFull"->{RemoteMappingScreen(onBack=back);return}
-        "pcKeyboard"->{KeyboardScreen(onBack=back);return}
+        "pcKeyboard"->{KeyboardScreen(onBack={detail="pcWorkspace"});return}
         "pcWorkspace"->{
             val pcEndpoint = status.address.orEmpty()
             val pcHost = pcEndpoint.substringBefore(':')
@@ -437,6 +443,7 @@ fun DoupadShell(
             PcWorkspaceScreen(
                 host=pcHost, port=pcPort, pin=pin, initialTab=pcWorkspaceTab,
                 onBack=back,
+                onKeyboard={detail="pcKeyboard"},
                 onMove={dx,dy->vm.sendMouseMove(dx,dy)},
                 onLeftClick={vm.sendMouseClick(MouseButton.LEFT)},
                 onRightClick={vm.sendMouseClick(MouseButton.RIGHT)},
@@ -1116,7 +1123,7 @@ fun DoupadShell(
                         }
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                             ToolTile("System information","",Icons.Default.Memory,Modifier.weight(1f)) {
-                                pcWorkspaceTab="Info"; detail="pcWorkspace"
+                                pcWorkspaceTab="Workspace"; detail="pcWorkspace"
                             }
                             ToolTile("Keyboard","",Icons.Default.Keyboard,Modifier.weight(1f)) {
                                 detail="pcKeyboard"
@@ -1483,7 +1490,7 @@ fun DoupadShell(
                             connectRequested=false
                             dialog=null
                             page=3
-                            pcWorkspaceTab="Info"
+                            pcWorkspaceTab="Workspace"
                             detail="pcWorkspace"
                         })
                         else vm.connectAndroidIp("$ip:$p")

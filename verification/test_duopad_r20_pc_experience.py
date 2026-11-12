@@ -21,6 +21,6 @@ assert 'ContentScale.Fit' in workspace
 assert 'Installed Memory' in workspace and 'Available RAM' in workspace
 assert '%.1f GB' in workspace
 assert 'PC_JAVA_CRASH' in rec
-assert 'versionCode = 32' in gradle and '0.18.5-r20-pc-experience' in gradle
-assert 'DuoPad-Pro-v0.18.5-R20-debug.apk' in workflow
+assert 'versionCode = 33' in gradle and '0.18.6-r21-pc-host-pro' in gradle
+assert 'DuoPad-Pro-v0.18.6-R21-debug.apk' in workflow
 print('DOUPAD_R20_PC_EXPERIENCE_SOURCE_PASS')

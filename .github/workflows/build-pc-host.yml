@@ -31,32 +31,42 @@ jobs:
         shell: pwsh
         run: |
           python -m unittest discover -s host/python/tests -v
-      - name: Build portable Windows EXE
+      - name: Build DuoPad Pro GUI EXE
+        shell: pwsh
+        run: |
+          python -c "from PIL import Image; Image.open('app/src/main/res/drawable-nodpi/duopad_original_logo.png').convert('RGBA').save('host-logo.ico',format='ICO',sizes=[(16,16),(32,32),(48,48),(64,64),(96,96)])"
+          python -m PyInstaller --noconfirm --clean --onefile --windowed `
+            --name DuoPad-PC-Host-Pro --paths host/python `
+            --add-data "app/src/main/res/drawable-nodpi/duopad_original_logo.png;." `
+            --icon host-logo.ico --hidden-import pc_workspace `
+            host/python/duopad_host_gui.py
+      - name: Build diagnostic CLI EXE
         shell: pwsh
         run: |
           python -m PyInstaller --noconfirm --clean --onefile --console `
-            --name DuoPad-PC-Host --paths host/python `
+            --name DuoPad-PC-Host-CLI --paths host/python `
             host/python/unipoint_host.py
       - name: Package one-click Windows host
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/package | Out-Null
-          Copy-Item dist/DuoPad-PC-Host.exe dist/package/
+          Copy-Item dist/DuoPad-PC-Host-Pro.exe dist/package/
+          Copy-Item dist/DuoPad-PC-Host-CLI.exe dist/package/
           Copy-Item host/windows/SETUP-FIREWALL-ONCE.bat dist/package/
           @'
           @echo off
-          title DuoPad PC Host v4.0
+          title DuoPad PC Host Pro v5
           echo Run on YOUR own Windows PC. Do not forward the PC Host port to the internet.
           netsh advfirewall firewall show rule name="DuoPad PC Host TCP 27845" >nul 2>&1
           if %errorlevel% neq 0 call "%~dp0SETUP-FIREWALL-ONCE.bat"
-          "%~dp0DuoPad-PC-Host.exe" --port 27845
+          "%~dp0DuoPad-PC-Host-Pro.exe" --port 27845
           pause
           '@ | Set-Content -Path dist/package/START-DUOPAD-PC-HOST.bat -Encoding ascii
           Copy-Item host/WINDOWS-SETUP.md dist/package/README-PC-HOST.md
-          Get-FileHash dist/package/DuoPad-PC-Host.exe -Algorithm SHA256 | ForEach-Object { "SHA256: $($_.Hash)" } | Out-File dist/package/SHA256SUMS.txt -Encoding ascii
+          Get-FileHash dist/package/DuoPad-PC-Host-Pro.exe -Algorithm SHA256 | ForEach-Object { "SHA256: $($_.Hash)" } | Out-File dist/package/SHA256SUMS.txt -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
-          name: DuoPad-Windows-PC-Host-v4.0-R15
+          name: DuoPad-Windows-PC-Host-v5-Pro-R21
           path: dist/package/*
           if-no-files-found: error
           retention-days: 14

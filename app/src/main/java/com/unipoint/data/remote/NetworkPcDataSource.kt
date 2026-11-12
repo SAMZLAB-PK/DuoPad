@@ -284,8 +284,21 @@ class NetworkPcDataSource constructor(
         val out = output ?: return@withContext -1L
         val inp = input ?: return@withContext -1L
         val start = System.currentTimeMillis()
-        if (pingIdentity(out, inp) == null) return@withContext -1L
-        (System.currentTimeMillis() - start).also { lastLatency.set(it) }
+        try {
+            // A Windows Host or Wi-Fi socket can close while heartbeat writes.
+            // Never propagate SocketException out of a coroutine heartbeat.
+            if (output !== out || !isConnected) return@withContext -1L
+            val name = pingIdentity(out, inp)
+            if (name == null) return@withContext -1L
+            (System.currentTimeMillis() - start).also { lastLatency.set(it) }
+        } catch (cancel: kotlinx.coroutines.CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            PcDiagnosticRecorder.note(context,
+                "PC_HEARTBEAT_IO_ERROR: ${error.javaClass.simpleName}; socket disconnected safely")
+            if (output === out) disconnect()
+            -1L
+        }
     }
 
     fun sendClipboard(text: String) = sendPacket(0x21, text.toByteArray(Charsets.UTF_8))

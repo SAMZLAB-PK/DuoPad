@@ -393,12 +393,13 @@ class DiscoveryResponder(threading.Thread):
 # ---------------------------------------------------------------------------
 
 class ClientHandler(threading.Thread):
-    def __init__(self, conn: socket.socket, addr, injector: InputInjector, pin: Optional[str]):
+    def __init__(self, conn: socket.socket, addr, injector: InputInjector, pin: Optional[str], on_disconnect=None):
         super().__init__(daemon=True)
         self.conn = conn
         self.addr = addr
         self.injector = injector
         self.pin = pin
+        self.on_disconnect = on_disconnect
         self.authenticated = pin is None  # local development only; launcher always uses a PIN
         self.workspace = PcWorkspaceService()
 
@@ -420,6 +421,9 @@ class ClientHandler(threading.Thread):
             self.workspace.close()
             self.conn.close()
             print(f"[-] Client disconnected: {self.addr}")
+            if self.on_disconnect:
+                try: self.on_disconnect(self.addr)
+                except Exception: pass
 
     def handle(self, ptype: int, payload: bytes):
         # Auth
@@ -472,77 +476,79 @@ class ClientHandler(threading.Thread):
 # Server
 # ---------------------------------------------------------------------------
 
-def main():
-    parser = argparse.ArgumentParser(description="DOUPAD Host")
-    parser.add_argument("--port", type=int, default=27845)
-    parser.add_argument("--pin", type=str, default=None, help="Use a fixed 8+ character pairing PIN")
-    parser.add_argument("--no-pin", action="store_true", help="Insecure; allowed for localhost testing only")
-    parser.add_argument("--bind", type=str, default="0.0.0.0")
-    args = parser.parse_args()
+def serve(port: int = 27845, pin: Optional[str] = None, bind: str = "0.0.0.0",
+          stop_event=None, on_event=None):
+    """Launch the same authenticated protocol in CLI or DuoPad's GUI.
 
-    if args.no_pin and args.bind not in ("127.0.0.1", "::1", "localhost"):
-        parser.error("--no-pin is allowed only when bound to loopback")
-    if args.no_pin:
-        args.pin = None
-    elif args.pin is None:
-        # Short-lived PIN displayed visibly on the host PC. Re-enter after restarting.
-        import secrets
-        args.pin = f"{secrets.randbelow(100_000_000):08d}"
-    if args.pin and len(args.pin) < 8:
-        parser.error("PIN must contain at least 8 characters")
+    Only start as an interactive desktop user. An optional stop_event allows
+    the GUI to stop listening gracefully without abruptly killing client threads.
+    """
+    if pin is None or len(pin) < 8:
+        raise ValueError("Use a pairing PIN of at least 8 characters")
     injector = InputInjector()
-    discovery = DiscoveryResponder(args.port, args.pin)
-    discovery.start()
-    discovery.ready_event.wait(1.5)
-
+    discovery = DiscoveryResponder(port, pin)
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((args.bind, args.port))
-    server.listen(5)
-
-    hostname = socket.gethostname() or "DOUPAD PC"
-    lan_ips = get_lan_ipv4s()
-    print("=" * 58)
-    print("  DOUPAD Host  v4.0 PC Workspace")
-    print(f"  TCP control:      {args.bind}:{args.port}")
-    discovery_state = "READY" if not discovery.error else f"BLOCKED: {discovery.error}"
-    print(f"  LAN discovery:    UDP {DISCOVERY_PORT} ({discovery_state})")
-    if lan_ips:
-        for ip in lan_ips:
-            print(f"  Connect address:  {ip}:{args.port}")
-    else:
-        print("  Connect address:  could not determine LAN IPv4")
-    print(f"  PIN protection:   {'enabled' if args.pin else 'off (localhost only)'}")
-    if args.pin:
-        print(f"  Pairing PIN:      {args.pin}")
-    print("  Keep this window open while using Network PC mode.")
-    print("=" * 58)
-    if lan_ips:
-        pairing_uri = build_pairing_uri(lan_ips[0], args.port, hostname, args.pin)
-        print(f"\n  Pairing URI: {pairing_uri}")
-        print_pairing_qr(pairing_uri)
-
     try:
-        while True:
-            conn, addr = server.accept()
+        server.bind((bind, port))
+        server.listen(16)
+        server.settimeout(0.5)
+        discovery.start()
+        discovery.ready_event.wait(1.5)
+        hostname = socket.gethostname() or "DuoPad PC"
+        ips = get_lan_ipv4s()
+        print("=" * 58)
+        print("  DuoPad PC Host v5.0")
+        print(f"  TCP:  {bind}:{port} | Discovery: UDP {DISCOVERY_PORT}")
+        print(f"  Connect address: {ips[0] if ips else 'local IP unavailable'}:{port}")
+        print(f"  Pairing PIN: {pin}")
+        print("=" * 58)
+        if ips:
+            print_pairing_qr(build_pairing_uri(ips[0], port, hostname, pin))
+        if on_event: on_event("ready", (ips, port, pin))
+        while stop_event is None or not stop_event.is_set():
+            try:
+                conn, addr = server.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            # A local interactive desktop user must start the host. Reject WAN
-            # clients: this LAN transport does not offer transport-layer encryption.
+            # Accept LAN and Tailscale tailnet addresses. No public WAN port exposure.
             try:
                 client_ip = ipaddress.ip_address(addr[0])
-                allowed = client_ip.is_private or client_ip.is_loopback
+                allowed = (client_ip.is_private or client_ip.is_loopback or
+                    client_ip in ipaddress.ip_network("100.64.0.0/10"))
             except ValueError:
                 allowed = False
             if not allowed:
-                print(f"[!] Rejected non-LAN client: {addr[0]}")
+                print(f"[!] Rejected public WAN client: {addr[0]}")
                 conn.close()
                 continue
-            ClientHandler(conn, addr, injector, args.pin).start()
-    except KeyboardInterrupt:
-        print("\n[+] Shutting down")
+            if on_event: on_event("connected", addr)
+            handler = ClientHandler(conn, addr, injector, pin,
+                on_disconnect=(lambda client, cb=on_event:
+                    cb("disconnected", client) if cb else None))
+            handler.start()
     finally:
         discovery.stop()
         server.close()
+        if on_event: on_event("stopped", None)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="DuoPad PC Host")
+    parser.add_argument("--port", type=int, default=27845)
+    parser.add_argument("--pin", type=str, default=None)
+    parser.add_argument("--bind", type=str, default="0.0.0.0")
+    args = parser.parse_args()
+    if args.pin is None:
+        import secrets
+        args.pin = f"{secrets.randbelow(100_000_000):08d}"
+    try:
+        serve(args.port, args.pin, args.bind)
+    except KeyboardInterrupt:
+        print("\n[+] Host stopped")
 
 
 if __name__ == "__main__":

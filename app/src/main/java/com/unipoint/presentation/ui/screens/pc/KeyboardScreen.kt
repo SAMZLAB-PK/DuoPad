@@ -1,5 +1,12 @@
 package com.unipoint.presentation.ui.screens.pc
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -17,6 +24,12 @@ fun KeyboardScreen(
     onBack: () -> Unit,
     viewModel: MainViewModel = hiltViewModel()
 ) {
+    val activity=LocalContext.current as? Activity
+    DisposableEffect(activity) {
+        val before=activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        activity?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onDispose { activity?.requestedOrientation=before }
+    }
     val rows = listOf(
         listOf("Esc", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"),
         listOf("`", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "Bksp"),
@@ -68,7 +81,7 @@ fun KeyboardScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Virtual Keyboard") },
+                title = { Text("Windows On-Screen Keyboard", fontWeight=androidx.compose.ui.text.font.FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -82,6 +95,7 @@ fun KeyboardScreen(
                 .padding(padding)
                 .padding(8.dp)
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
         ) {
             var text by remember { mutableStateOf("") }
             OutlinedTextField(
@@ -112,6 +126,10 @@ fun KeyboardScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            Text("Windows keyboard  •  Type, shortcuts and special keys",
+                style=MaterialTheme.typography.bodySmall,
+                color=MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier=Modifier.padding(bottom=8.dp))
             rows.forEach { row ->
                 Row(
                     Modifier.fillMaxWidth(),
@@ -133,13 +151,13 @@ fun KeyboardScreen(
                         if (selected) {
                             FilledTonalButton(
                                 onClick = { pressKey(label) },
-                                modifier = Modifier.weight(weight).height(42.dp),
+                                modifier = Modifier.weight(weight).height(45.dp),
                                 contentPadding = PaddingValues(2.dp)
                             ) { Text(label, style = MaterialTheme.typography.labelSmall) }
                         } else {
                             OutlinedButton(
                                 onClick = { pressKey(label) },
-                                modifier = Modifier.weight(weight).height(42.dp),
+                                modifier = Modifier.weight(weight).height(45.dp),
                                 contentPadding = PaddingValues(2.dp)
                             ) { Text(label, style = MaterialTheme.typography.labelSmall) }
                         }

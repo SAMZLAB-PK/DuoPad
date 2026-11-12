@@ -8,8 +8,8 @@ shell=(root/'app/src/main/java/com/unipoint/presentation/ui/DoupadShell.kt').rea
 gradle=(root/'app/build.gradle.kts').read_text()
 workflow=(root/'.github/workflows/build-apk.yml').read_text()
 hostworkflow=(root/'.github/workflows/build-pc-host.yml').read_text()
-assert any(x in gradle for x in ['versionCode = 27', 'versionCode = 28', 'versionCode = 29', 'versionCode = 32', 'versionCode = 28', 'versionCode = 29', 'versionCode = 32'])
-assert any(x in gradle for x in ['versionName = "0.18.0-r15-pc-workspace"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"', 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.5-r20-pc-experience"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"', 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.5-r20-pc-experience"'])
+assert any(x in gradle for x in ['versionCode = 27', 'versionCode = 28', 'versionCode = 29', 'versionCode = 33', 'versionCode = 28', 'versionCode = 29', 'versionCode = 33'])
+assert any(x in gradle for x in ['versionName = "0.18.0-r15-pc-workspace"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"', 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.6-r21-pc-host-pro"', 'versionName = "0.18.1-r16-pc-discovery-diagnostics"', 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.6-r21-pc-host-pro"'])
 assert 'PcWorkspaceService' in server and 'secrets.randbelow(100_000_000)' in server
 assert 'client_ip.is_private or client_ip.is_loopback' in server
 assert 'parser.add_argument("--no-pin"' in server
@@ -24,6 +24,6 @@ assert 'CreateDocument' in screen and 'OpenDocument' in screen
 assert '"pcWorkspace"' in shell and 'PcWorkspaceScreen(' in shell
 assert 'if(target.pc) {' in shell and 'pin=""' in shell
 assert 'test_duopad_r15_pc_workspace.py' in workflow
-assert any(x in workflow for x in ['DuoPad-Pro-v0.18.0-R15-debug.apk', 'DuoPad-Pro-v0.18.2-R17-debug.apk', 'DuoPad-Pro-v0.18.5-R20-debug.apk','DuoPad-Pro-v0.18.2-R17-debug.apk', 'DuoPad-Pro-v0.18.5-R20-debug.apk'])
+assert any(x in workflow for x in ['DuoPad-Pro-v0.18.0-R15-debug.apk', 'DuoPad-Pro-v0.18.2-R17-debug.apk', 'DuoPad-Pro-v0.18.6-R21-debug.apk','DuoPad-Pro-v0.18.2-R17-debug.apk', 'DuoPad-Pro-v0.18.6-R21-debug.apk'])
 assert 'PyInstaller' in hostworkflow and 'python -m unittest discover' in hostworkflow
 print('DUOPAD_R15_PC_WORKSPACE_CONTRACT_PASS')

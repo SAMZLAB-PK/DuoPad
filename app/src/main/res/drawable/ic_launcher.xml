@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="48dp" android:height="48dp"
-    android:viewportWidth="48" android:viewportHeight="48">
-    <path android:fillColor="#171717" android:pathData="M11,0h26a11,11 0,0 1,11 11v26a11,11 0,0 1,-11 11h-26a11,11 0,0 1,-11 -11v-26a11,11 0,0 1,11 -11"/>
-    <path android:fillColor="#FFFFFF" android:pathData="M13,10h12c9,0 14,6 14,14s-5,14 -14,14h-12v-7h12c5,0 7,-3 7,-7s-2,-7 -7,-7h-12z"/>
-    <path android:fillColor="#FFFFFF" android:pathData="M13,19h8v10h-8z"/>
-</vector>
+<!-- User-supplied glossy D-mark; used on launcher AND in-app wordmark. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/duopad_original_logo"
+    android:gravity="fill"
+    android:filter="true"
+    android:antialias="true" />

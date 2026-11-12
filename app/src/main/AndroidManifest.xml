@@ -51,6 +51,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name="com.unipoint.presentation.ui.DuoPadPortraitCaptureActivity"
+            android:screenOrientation="portrait"
+            android:exported="false" />
         <activity android:name="com.unipoint.presentation.ui.DoupadMirrorActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <service
