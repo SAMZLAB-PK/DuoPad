@@ -11,6 +11,7 @@ import android.graphics.BitmapFactory
 import android.speech.RecognizerIntent
 import android.content.Intent
 import com.unipoint.core.util.MirrorCrashRecorder
+import com.unipoint.core.util.TrustedPcPairing
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -203,7 +204,7 @@ fun DoupadShell(
             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
             setPrompt("Scan the QR shown by DuoPad PC Host")
             setBeepEnabled(false)
-            setOrientationLocked(false)
+            setOrientationLocked(true)
         })
     }
     val discoverableLauncher=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
@@ -298,11 +299,23 @@ fun DoupadShell(
         port=target.endpoint.substringAfter(':',if(target.pc)"27845" else "5555")
         pc=target.pc;pcTransport="wifi";localError=""
         if(target.pc) {
-            // PC files/screen access requires an explicit Host PIN each session.
-            // Never attempt to reconnect a previously saved PC without credentials.
-            connectRequested=false
-            pin=""
-            dialog="connect"
+            val trustedPin = TrustedPcPairing.read(context,target.endpoint)
+            if(!trustedPin.isNullOrBlank()){
+                pin=trustedPin
+                connectRequested=true
+                dialog="connectingSaved"
+                vm.connectNetwork(ip,port.toIntOrNull()?:27845,trustedPin,onSuccess={
+                    connectRequested=false
+                    dialog=null
+                    pcWorkspaceTab="Info"
+                    page=3
+                    detail="pcWorkspace"
+                })
+            }else{
+                connectRequested=false
+                pin=""
+                dialog="connect"
+            }
         } else {
             connectRequested=true;dialog="connectingSaved"
             vm.connectAndroidIp("$ip:$port")
@@ -325,6 +338,20 @@ fun DoupadShell(
             reconnectAttempts=0
             val endpoint=status.address.orEmpty()
             if (endpoint.isNotBlank() && ':' in endpoint) {
+                if(state.mode==AppMode.PC){
+                    // User requested auto-save after successful authenticated PC connection.
+                    // Encrypt PIN with Android Keystore. Never store it in targets JSON.
+                    if(pin.isNotBlank()) TrustedPcPairing.save(context,endpoint,pin)
+                    val previousPc=targets.firstOrNull { it.endpoint==endpoint }
+                    val saved=previousPc ?: Target(
+                        status.deviceName?.takeIf{it.isNotBlank()} ?: endpoint.substringBefore(':'),
+                        endpoint,true
+                    )
+                    targets=listOf(saved)+targets.filterNot{it.endpoint==endpoint}
+                    saveTargets(context,targets)
+                    automaticReconnect=true
+                    lastPromptedEndpoint=endpoint
+                } else {
                 val previous=targets.firstOrNull { it.endpoint==endpoint }
                 if (previous!=null) {
                     targets=listOf(previous)+targets.filterNot { it.endpoint==endpoint }
@@ -336,6 +363,7 @@ fun DoupadShell(
                         endpoint,state.mode==AppMode.PC
                     )
                     dialog="saveDevice"
+                }
                 }
             }
         }
@@ -356,8 +384,13 @@ fun DoupadShell(
             val host=target.endpoint.substringBefore(':')
             val port=target.endpoint.substringAfter(':',if(target.pc) "27845" else "5555").toIntOrNull()
             if(port!=null) {
-                if(target.pc) return@LaunchedEffect // Host PIN required; avoid unauthenticated automatic attempts
-                else vm.connectAndroidIp("$host:$port")
+                if(target.pc){
+                    val trustedPin=TrustedPcPairing.read(context,target.endpoint) ?: return@LaunchedEffect
+                    pin=trustedPin;pc=true;pcTransport="wifi"
+                    vm.connectNetwork(host,port,trustedPin,onSuccess={
+                        pcWorkspaceTab="Info";page=3;detail="pcWorkspace"
+                    })
+                } else vm.connectAndroidIp("$host:$port")
             }
         }
     }
@@ -576,6 +609,7 @@ fun DoupadShell(
                                             onClick={
                                                 menuTarget=null
                                                 targets=targets.filterNot{it.endpoint==target.endpoint}
+                                                if(target.pc)TrustedPcPairing.forget(context,target.endpoint)
                                                 saveTargets(context,targets)
                                             }
                                         )
@@ -692,6 +726,7 @@ fun DoupadShell(
                             IconButton(onClick={
                                 if(isSaved) {
                                     targets=targets.filterNot{it.endpoint==target.endpoint}
+                                    if(target.pc)TrustedPcPairing.forget(context,target.endpoint)
                                     saveTargets(context,targets)
                                     message("Removed from saved devices")
                                 } else if(connected && status.address==target.endpoint) {
@@ -1399,7 +1434,7 @@ fun DoupadShell(
                 }
                 "keyboard"->{OutlinedTextField(command,{command=it},label={Text("Text to send")});Text("Focus a text field on your device first.",fontSize=12.sp,color=Muted)}
                 "shell"->{OutlinedTextField(command,{command=it},label={Text("ADB command")});Button(onClick={scope.launch{output="Running…";output=vm.executeAdbAwait(command)}}){Text("Run")};if(output.isNotBlank())Text(output,fontSize=12.sp)}
-                "settings"->{Text("DuoPad Pro ${BuildConfig.VERSION_NAME}");Text("Android TV / Box + Windows remote and transfer controller.",fontSize=12.sp);if(connected)TextButton(onClick={automaticReconnect=false;vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
+                "settings"->{Text("DuoPad Pro ${BuildConfig.VERSION_NAME}");Text("Android TV / Box + Windows remote and transfer controller.",fontSize=12.sp);if(connected)TextButton(onClick={automaticReconnect=false;vm.disconnect();dialog=null}){Text("Disconnect ${status.deviceName}")};TextButton(onClick={targets=emptyList();TrustedPcPairing.forgetAll(context);saveTargets(context,targets);dialog=null}){Text("Clear saved device list")};Text("Live mirror uses scrcpy 3.3.1 under Apache 2.0. Physical device testing is still required.",fontSize=12.sp,color=Muted)}
                 "power"->{listOf("Sleep" to "input keyevent 223","Wake" to "input keyevent 224","Restart" to "reboot","Power off" to "reboot -p").forEach{(label,cmd)->OutlinedButton(onClick={command=cmd;dialog="Confirm power action"},modifier=Modifier.fillMaxWidth()){Text(label)}}}
                 "Confirm power action"->Text("Run '$command' on ${status.deviceName}? Restart/shutdown disconnects the device.")
                 "gamepad"->{Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("A" to 96,"B" to 97,"X" to 99,"Y" to 100).forEach{(label,code)->OutlinedButton(onClick={key(code)},contentPadding=PaddingValues(12.dp)){Text(label)}}};Pad(::key);Text("Key-based game controls; compatibility depends on the game.",fontSize=11.sp,color=Muted)}
@@ -1412,7 +1447,7 @@ fun DoupadShell(
         }
     },confirmButton={TextButton(enabled=!(connectRequested && status.state==ConnectionState.CONNECTING),onClick={
         when(dialog){
-            "clearSaved"->{targets=emptyList();saveTargets(context,targets);dialog=null}
+            "clearSaved"->{targets=emptyList();TrustedPcPairing.forgetAll(context);saveTargets(context,targets);dialog=null}
             "clearLogs"->{MirrorCrashRecorder.clear(context);com.unipoint.core.util.PcDiagnosticRecorder.clear(context);dialog=null;message("Diagnostic logs cleared") }
             "saveDevice"->{
                 pendingSaveTarget?.let { target ->

@@ -14,7 +14,7 @@ assert 'if (current.closed || generation.get()!=ticket) break' in s
 assert 'own?.releaseDecoder()' in s
 assert 'DECODER_CLEANUP:' in s
 assert s.index('own?.close()\n            drain?.join(500L)') < s.index('val released=own?.releaseDecoder()')
-assert 'versionCode = 31' in g and 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.4-r19-branded-header"' in g
+assert 'versionCode = 32' in g and 'versionName = "0.18.2-r17-pc-pin-handshake"', 'versionName = "0.18.5-r20-pc-experience"' in g
 assert 'test_duopad_r11_nonblocking_switch.py' in w
-assert 'DuoPad-Pro-v0.18.4-R19-debug.apk' in w
+assert 'DuoPad-Pro-v0.18.5-R20-debug.apk' in w
 print('R11_NONBLOCKING_SWITCH_SOURCE_CHECK_PASS')

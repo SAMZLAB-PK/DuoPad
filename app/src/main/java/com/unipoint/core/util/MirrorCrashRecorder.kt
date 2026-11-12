@@ -83,6 +83,12 @@ object MirrorCrashRecorder {
                 note(app, "UNCAUGHT_EXCEPTION thread=${thread.name}: ${error.javaClass.simpleName}: ${error.message}")
                 note(app, error.stackTraceToString().take(12000))
             }
+            // Capture crash signature for PC Workspace even when mirror isn't active.
+            // Limit trace to frames/class names; avoid recording PINs or file contents.
+            if (!mirrorWorker) {
+                val frames = error.stackTrace.take(16).joinToString(" | ") { it.className + "." + it.methodName + ":" + it.lineNumber }
+                PcDiagnosticRecorder.note(app, "PC_JAVA_CRASH thread=${thread.name} type=${error.javaClass.simpleName} frames=$frames")
+            }
             if (previous != null) previous.uncaughtException(thread, error)
             else android.os.Process.killProcess(android.os.Process.myPid())
         }

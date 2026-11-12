@@ -1,6 +1,13 @@
 package com.unipoint.presentation.ui.screens.pc
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.compose.ui.layout.ContentScale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
@@ -50,7 +57,32 @@ fun PcWorkspaceScreen(
     val scope = rememberCoroutineScope()
     val client = remember(host, port, pin) { PcWorkspaceClient(context.applicationContext, host, port, pin) }
     DisposableEffect(client) { onDispose { client.close() } }
-    var tab by remember(initialTab) { mutableStateOf(initialTab.takeIf { it in listOf("Screen", "Files", "Info") } ?: "Screen") }
+    var tab by rememberSaveable(initialTab) {
+        mutableStateOf(initialTab.takeIf { it in listOf("Screen", "Files", "Info") } ?: "Screen")
+    }
+    val activity = context as? Activity
+    // Screen opens landscape and hides status bar; Files and Info stay portrait.
+    // Reset orientation and bars when leaving to avoid locking the whole app.
+    DisposableEffect(activity, tab) {
+        val oldOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        if (tab == "Screen") {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            activity?.window?.let { window ->
+                WindowCompat.getInsetsController(window,window.decorView)
+                    .hide(WindowInsetsCompat.Type.statusBars())
+            }
+        }
+        onDispose {
+            if (tab == "Screen") {
+                activity?.requestedOrientation = oldOrientation
+                activity?.window?.let { window ->
+                    WindowCompat.getInsetsController(window,window.decorView)
+                        .show(WindowInsetsCompat.Type.statusBars())
+                }
+            }
+        }
+    }
+    BackHandler(tab == "Screen") { tab = "Info" }
     var message by remember { mutableStateOf("Connecting to PC Host…") }
     var busy by remember { mutableStateOf(false) }
     var desktop by remember { mutableStateOf<Bitmap?>(null) }
@@ -124,7 +156,8 @@ fun PcWorkspaceScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        .statusBarsPadding().navigationBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
             Column(Modifier.weight(1f)) {
@@ -165,7 +198,7 @@ fun PcWorkspaceScreen(
                             .pointerInput(Unit) { detectDragGestures { change, drag ->
                                 change.consume()
                                 onMove(drag.x * 1.4f, drag.y * 1.4f)
-                            } })
+                            } }, contentScale = ContentScale.Fit)
                     } else {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Default.Computer, null, Modifier.size(46.dp))
@@ -281,10 +314,15 @@ fun PcWorkspaceScreen(
                     .padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     listOf("name" to "PC Name", "os" to "Windows / OS", "cpu" to "Processor",
                         "cpuThreads" to "Logical CPU Threads", "architecture" to "Architecture",
-                        "ramTotal" to "Installed Memory (bytes)", "ramAvailable" to "Available RAM (bytes)",
+                        "ramTotal" to "Installed Memory", "ramAvailable" to "Available RAM",
                         "home" to "User directory", "drives" to "Drive count").forEach { (key, label) ->
                         Text(label, fontWeight = FontWeight.Bold)
-                        Text(data.optString(key, "Not available"), style = MaterialTheme.typography.bodyMedium)
+                        val display = if (key == "ramTotal" || key == "ramAvailable") {
+                            val bytes = data.optLong(key, -1L)
+                            if (bytes >= 0L) String.format(java.util.Locale.US, "%.1f GB",
+                                bytes.toDouble() / (1024.0*1024.0*1024.0)) else "Not available"
+                        } else data.optString(key, "Not available")
+                        Text(display, style = MaterialTheme.typography.bodyMedium)
                         HorizontalDivider()
                     }
                 }

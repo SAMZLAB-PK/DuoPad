@@ -14,7 +14,7 @@ assert 'contentDescription = "DuoPad menu"' in s
 assert 'onMore = { dialog = "settings" }' in s
 assert 'onMore = { page = 5 }' in s
 assert 'onAppearanceChange(if (currentlyDark) "light" else "dark")' in s
-assert 'versionCode = 31' in g
-assert 'versionName = "0.18.4-r19-branded-header"' in g
-assert 'DuoPad-Pro-v0.18.4-R19-debug.apk' in w
+assert 'versionCode = 32' in g
+assert 'versionName = "0.18.5-r20-pc-experience"' in g
+assert 'DuoPad-Pro-v0.18.5-R20-debug.apk' in w
 print('DOUPAD_R19_BRANDING_VERIFIED')
