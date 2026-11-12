@@ -10,6 +10,10 @@ ROOT=Path(__file__).resolve().parents[1]
 RES=ROOT / "app/src/main/res"
 SRC=ROOT / "app/src/main"
 found=set()
+# Drawable PNG/WebP/JPG files are real Android resources, not only XML resources.
+for file in RES.rglob("*"):
+    if file.is_file() and file.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+        found.add((file.parent.name.split("-", 1)[0], file.stem))
 for file in RES.rglob("*.xml"):
     ET.parse(file)
     kind=file.parent.name.split("-", 1)[0]
