@@ -17,7 +17,7 @@ assert 'PC_HOST_FOUND' in net and 'PC_CONNECT_FAILED' in net
 assert 'duopad_pc_diagnostics.txt' in log and 'MAX' not in log
 assert 'PC DISCOVERY AND CONNECTION LOG' in screen and 'PcDiagnosticRecorder.clear(context)' in screen
 assert 'DuoPad diagnostics' in screen
-assert 'LaunchedEffect(Unit) { vm.scanAndroid() }' in shell
+assert 'LaunchedEffect(Unit) {' in shell and 'vm.scanAndroid()' in shell  # R22 resets page to Devices before scan
 assert 'if(state.hasScannedPc) "Search Again" else "Search PC"' in shell
 assert 'pc=scanFilter=="PC"' in shell
 assert 'actionLabel = if (uiState.hasScannedPc) "Search Again" else "Search PC"' in devices
