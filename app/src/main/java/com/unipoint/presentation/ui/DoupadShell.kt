@@ -246,6 +246,19 @@ fun DoupadShell(
     }
     fun requireDevice():Boolean { if(!connected){dialog="connect";message("Connect your TV or PC first.")};return connected }
     fun requireTv():Boolean { if(!requireDevice())return false; if(state.mode!=AppMode.ANDROID){message("This tool requires an Android TV connection.");return false};return true }
+    fun openPcTool(tab:String) {
+        if (!connected || state.mode != AppMode.PC) {
+            message("PC is disconnected. Select your saved PC on the Devices page to reconnect.")
+            page=4
+            detail=null
+            return
+        }
+        if(tab=="Keyboard") detail="pcKeyboard"
+        else {
+            pcWorkspaceTab=tab
+            detail="pcWorkspace"
+        }
+    }
     fun key(code:Int) {
         if(!requireDevice())return
         val mapped = if(state.mode==AppMode.ANDROID) RemoteKeyMapping.resolve(context,code) else code
@@ -480,7 +493,7 @@ fun DoupadShell(
                     )).forEach { (label,icon,target) ->
                         Column(Modifier.weight(1f).clickable {
                             if(target=="tools"){page=3;detail=null}
-                            else if(state.mode==AppMode.PC) {pcWorkspaceTab=label; detail="pcWorkspace"}
+                            else if(state.mode==AppMode.PC) openPcTool(label)
                             else if(requireTv())detail=target
                         },horizontalAlignment=Alignment.CenterHorizontally){
                             Surface(color=if(page==3&&target=="tools")DuoColors.AccentContainer else Color.Transparent,
@@ -1123,18 +1136,18 @@ fun DoupadShell(
                         Title("Windows PC Workspace","Control desktop, files, drives and PC information.")
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                             ToolTile("PC screen","",Icons.Default.Computer,Modifier.weight(1f)) {
-                                pcWorkspaceTab="Screen"; detail="pcWorkspace"
+                                openPcTool("Screen")
                             }
                             ToolTile("PC drives & files","",Icons.Default.FolderOpen,Modifier.weight(1f)) {
-                                pcWorkspaceTab="Files"; detail="pcWorkspace"
+                                openPcTool("Files")
                             }
                         }
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                             ToolTile("System information","",Icons.Default.Memory,Modifier.weight(1f)) {
-                                pcWorkspaceTab="Info"; detail="pcWorkspace"
+                                openPcTool("Info")
                             }
                             ToolTile("Keyboard","",Icons.Default.Keyboard,Modifier.weight(1f)) {
-                                detail="pcKeyboard"
+                                openPcTool("Keyboard")
                             }
                         }
                         Hint("DuoPad PC Host Pro v5 must be running on your PC. Connect securely over local Wi-Fi or your private Tailscale network.")
