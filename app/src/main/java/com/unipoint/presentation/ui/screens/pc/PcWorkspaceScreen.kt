@@ -48,7 +48,7 @@ fun PcWorkspaceScreen(
     host: String,
     port: Int,
     pin: String,
-    initialTab: String = "Workspace",
+    initialTab: String = "Screen",
     onBack: () -> Unit,
     onKeyboard: () -> Unit,
     onMove: (Float, Float) -> Unit,
@@ -63,14 +63,13 @@ fun PcWorkspaceScreen(
     val client = remember(host, port, pin) { PcWorkspaceClient(context.applicationContext, host, port, pin) }
     DisposableEffect(client) { onDispose { client.close() } }
     var tab by rememberSaveable(initialTab) {
-        mutableStateOf(initialTab.takeIf { it in listOf("Workspace", "Screen", "Files", "Info") } ?: "Workspace")
+        mutableStateOf(initialTab.takeIf { it in listOf("Screen", "Files", "Info") } ?: "Info")
     }
     var pointerMode by rememberSaveable { mutableStateOf("On PC screen") }
     val activity = context as? Activity
     // Screen opens landscape and hides status bar; Files and Info stay portrait.
     // Reset orientation and bars when leaving to avoid locking the whole app.
     DisposableEffect(activity, tab) {
-        val oldOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         if (tab == "Screen") {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             activity?.window?.let { window ->
@@ -81,7 +80,9 @@ fun PcWorkspaceScreen(
         }
         onDispose {
             if (tab == "Screen") {
-                activity?.requestedOrientation = oldOrientation
+                // Returning from fullscreen must restore portrait, not auto-rotate
+                // back into landscape while the phone is still held sideways.
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                 activity?.window?.let { window ->
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     WindowCompat.getInsetsController(window,window.decorView)
@@ -90,7 +91,7 @@ fun PcWorkspaceScreen(
             }
         }
     }
-    BackHandler(tab == "Screen") { tab = "Workspace" }
+    BackHandler(tab == "Screen") { onBack() }
     var message by remember { mutableStateOf("Connecting to PC Host…") }
     var busy by remember { mutableStateOf(false) }
     var desktop by remember { mutableStateOf<Bitmap?>(null) }
@@ -151,14 +152,20 @@ fun PcWorkspaceScreen(
                     }
                 }
                 "Files" -> {
-                    if (folder.isBlank()) driveData = client.drives()
-                    else directory = client.directory(folder)
+                    if (folder.isBlank()) {
+                        driveData = null
+                        driveData = client.drives()
+                        message = "PC drives ready"
+                    } else {
+                        directory = null
+                        directory = client.directory(folder)
+                        message = "PC folder loaded"
+                    }
                 }
-                "Info" -> info = client.information()
-                "Workspace" -> {
-                    // No request until user chooses a feature; avoids extra host load
-                    // and opens the real workspace dashboard after pairing.
-                    message = "PC connected • Choose Screen, Files or Info"
+                "Info" -> {
+                    info = null
+                    info = client.information()
+                    message = "System information updated"
                 }
             }
         } catch (_: CancellationException) {
@@ -174,7 +181,7 @@ fun PcWorkspaceScreen(
             desktop=desktop,
             mode=pointerMode,
             onModeChange={ pointerMode=it },
-            onExit={ tab="Workspace" },
+            onExit=onBack,
             onKeyboard=onKeyboard,
             onLeftClick=onLeftClick,
             onRightClick=onRightClick,
@@ -194,20 +201,14 @@ fun PcWorkspaceScreen(
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
             Column(Modifier.weight(1f)) {
-                Text("DuoPad PC Workspace", fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleLarge)
+                Text(when(tab) {
+                    "Files" -> "PC drives & files"
+                    "Info" -> "System information"
+                    else -> "PC Screen"
+                }, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                 Text("$host:$port", style = MaterialTheme.typography.bodySmall)
             }
             IconButton(onClick = { reload++ }) { Icon(Icons.Default.Refresh, "Refresh") }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("Workspace", "Screen", "Files", "Info").forEach { option ->
-                FilterChip(selected = tab == option, onClick = {
-                    tab = option
-                    if (option == "Files") folder = ""
-                }, label = { Text(option) }, modifier = Modifier.weight(1f))
-            }
         }
         if (lastError != null) {
             Surface(color = MaterialTheme.colorScheme.errorContainer,
@@ -219,106 +220,10 @@ fun PcWorkspaceScreen(
                 }
             }
         }
+        // The screenshot's 4-card Windows PC Workspace is the ONLY dashboard.
+        // This route displays one selected function (Files or Info), never a
+        // second navigation dashboard or redundant Screen controls.
         when (tab) {
-            "Workspace" -> {
-                Text("Welcome to your PC", style=MaterialTheme.typography.headlineSmall,
-                    fontWeight=FontWeight.Bold, modifier=Modifier.padding(start=16.dp,top=18.dp))
-                Text("Choose what you'd like to control on $host",
-                    color=MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier=Modifier.padding(horizontal=16.dp,vertical=9.dp))
-                Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
-                    ElevatedCard(onClick={tab="Screen"},modifier=Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(20.dp),verticalAlignment=Alignment.CenterVertically) {
-                            Icon(Icons.Default.DesktopWindows,null,Modifier.size(29.dp))
-                            Spacer(Modifier.width(15.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("Live desktop",fontWeight=FontWeight.Bold)
-                                Text("Full screen • Mouse control • Landscape",
-                                    style=MaterialTheme.typography.bodySmall)
-                            }
-                            Icon(Icons.Default.ChevronRight,null)
-                        }
-                    }
-                    ElevatedCard(onClick={tab="Files"},modifier=Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(20.dp),verticalAlignment=Alignment.CenterVertically) {
-                            Icon(Icons.Default.FolderOpen,null,Modifier.size(29.dp))
-                            Spacer(Modifier.width(15.dp))
-                            Column(Modifier.weight(1f)){
-                                Text("Drives and files",fontWeight=FontWeight.Bold)
-                                Text("Browse • Upload • Download",style=MaterialTheme.typography.bodySmall)
-                            }
-                            Icon(Icons.Default.ChevronRight,null)
-                        }
-                    }
-                    ElevatedCard(onClick={tab="Info"},modifier=Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(20.dp),verticalAlignment=Alignment.CenterVertically){
-                            Icon(Icons.Default.Memory,null,Modifier.size(29.dp))
-                            Spacer(Modifier.width(15.dp))
-                            Column(Modifier.weight(1f)){
-                                Text("PC system information",fontWeight=FontWeight.Bold)
-                                Text("Windows • CPU • Memory • Storage",style=MaterialTheme.typography.bodySmall)
-                            }
-                            Icon(Icons.Default.ChevronRight,null)
-                        }
-                    }
-                    OutlinedButton(onClick=onKeyboard,modifier=Modifier.fillMaxWidth()){
-                        Icon(Icons.Default.Keyboard,null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Windows on-screen keyboard")
-                    }
-                }
-            }
-            "Screen" -> {
-                Box(Modifier.fillMaxWidth().padding(12.dp).aspectRatio(16f/9f)
-                    .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center) {
-                    val image = desktop
-                    if (image != null) {
-                        Image(image.asImageBitmap(), "Windows desktop", Modifier.fillMaxSize()
-                            .pointerInput(Unit) { detectTapGestures(onTap = { onLeftClick() }) }
-                            .pointerInput(Unit) { detectDragGestures { change, drag ->
-                                change.consume()
-                                onMove(drag.x * 1.4f, drag.y * 1.4f)
-                            } }, contentScale = ContentScale.Fit)
-                    } else {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.Computer, null, Modifier.size(46.dp))
-                            Text("Opening PC screen…")
-                        }
-                    }
-                }
-                Text("Touch = click · Drag = move pointer · PC Host must remain open",
-                    Modifier.padding(horizontal = 15.dp), style = MaterialTheme.typography.bodySmall)
-                Row(Modifier.fillMaxWidth().padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onLeftClick, modifier = Modifier.weight(1f)) { Text("Left click") }
-                    OutlinedButton(onClick = onRightClick, modifier = Modifier.weight(1f)) { Text("Right click") }
-                    OutlinedButton(onClick = { onScroll(3f) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.KeyboardArrowUp, "Scroll up")
-                    }
-                    OutlinedButton(onClick = { onScroll(-3f) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.KeyboardArrowDown, "Scroll down")
-                    }
-                }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("Quality", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { quality = 45; previewWidth = 720 }) { Text("Fast") }
-                    TextButton(onClick = { quality = 60; previewWidth = 960 }) { Text("Balanced") }
-                    TextButton(onClick = { quality = 75; previewWidth = 1280 }) { Text("Sharp") }
-                }
-                OutlinedTextField(value = keyboardText, onValueChange = { keyboardText = it },
-                    label = { Text("Type on Windows PC") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp))
-                Row(Modifier.fillMaxWidth().padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { if (keyboardText.isNotEmpty()) { onText(keyboardText); keyboardText = "" } },
-                        modifier = Modifier.weight(1f)) { Text("Send text") }
-                    OutlinedButton(onClick = { onKey(40) }) { Text("Enter") }
-                    OutlinedButton(onClick = { onKey(41) }) { Text("Esc") }
-                }
-            }
             "Files" -> {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp),
                     verticalAlignment = Alignment.CenterVertically) {
@@ -344,7 +249,7 @@ fun PcWorkspaceScreen(
                     .padding(horizontal = 12.dp)) {
                     if (folder.isBlank()) {
                         val drives = driveData?.optJSONArray("drives")
-                        if (drives == null) Text("Loading drives…")
+                        if (drives == null) Text(if(lastError==null) "Loading drives…" else "Drives unavailable. Tap Refresh to retry.")
                         else for (idx in 0 until drives.length()) {
                             val drive = drives.getJSONObject(idx)
                             val path = drive.getString("path")
@@ -358,7 +263,7 @@ fun PcWorkspaceScreen(
                         }
                     } else {
                         val items = directory?.optJSONArray("entries")
-                        if (items == null) Text("Loading folder…")
+                        if (items == null) Text(if(lastError==null) "Loading folder…" else "Folder unavailable. Tap Refresh to retry.")
                         else for (idx in 0 until items.length()) {
                             val item = items.getJSONObject(idx)
                             val isDirectory = item.getBoolean("isDir")
@@ -390,7 +295,11 @@ fun PcWorkspaceScreen(
             }
             "Info" -> {
                 val data=info
-                if(data==null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(14.dp))
+                if(data==null) {
+                    if(lastError==null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(14.dp))
+                    else Text("System information is unavailable. Tap Refresh to retry.",
+                        modifier=Modifier.padding(16.dp))
+                }
                 else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
                     verticalArrangement=Arrangement.spacedBy(12.dp)){
                     Text("System overview",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
@@ -434,7 +343,7 @@ fun PcWorkspaceScreen(
                             Text("Drives detected: ${data.optString("drives","0")}")
                             Text("User folder: ${data.optString("home","Not available")}",
                                 style=MaterialTheme.typography.bodySmall)
-                            Text("For detailed drive capacity, open the Files tab.",
+                            Text("For detailed drive capacity, return to the PC Workspace and open PC drives & files.",
                                 color=MaterialTheme.colorScheme.onSurfaceVariant,
                                 style=MaterialTheme.typography.labelSmall)
                         }
