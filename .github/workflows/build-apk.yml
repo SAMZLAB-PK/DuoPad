@@ -90,6 +90,7 @@ jobs:
           python3 verification/test_duopad_r19_workspace_connect_diagnostics.py
           python3 verification/test_duopad_r20_pc_experience.py
           python3 verification/test_duopad_r21_host_fullscreen_crash.py
+          python3 verification/test_duopad_r22_single_dashboard.py
           python3 -m unittest discover -s host/python/tests -v
 
       - name: Run unit tests
@@ -104,15 +105,15 @@ jobs:
           mkdir -p dist
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -f "$APK"
-          cp "$APK" 'dist/DuoPad-Pro-v0.18.6-R21-debug.apk'
-          sha256sum 'dist/DuoPad-Pro-v0.18.6-R21-debug.apk' | tee 'dist/SHA256SUMS.txt'
+          cp "$APK" 'dist/DuoPad-Pro-v0.18.7-R22-debug.apk'
+          sha256sum 'dist/DuoPad-Pro-v0.18.7-R22-debug.apk' | tee 'dist/SHA256SUMS.txt'
 
       - name: Upload DOUPAD APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DuoPad-Pro-v0.18.6-R21-debug
+          name: DuoPad-Pro-v0.18.7-R22-debug
           path: |
-            dist/DuoPad-Pro-v0.18.6-R21-debug.apk
+            dist/DuoPad-Pro-v0.18.7-R22-debug.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
