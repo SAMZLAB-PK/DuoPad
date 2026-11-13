@@ -98,7 +98,7 @@ private fun DuoPadBrandHeader(
         horizontalArrangement = Arrangement.spacedBy(11.dp)
     ) {
         Image(
-            painter = painterResource(id = R.drawable.ic_launcher),
+            painter = painterResource(id = R.drawable.duopad_original_logo),
             contentDescription = "Original DuoPad D logo",
             modifier = Modifier.size(49.dp)
         )
@@ -819,7 +819,7 @@ fun DoupadShell(
                         IconButton(onClick={page=0},modifier=Modifier.size(39.dp)){
                             Icon(Icons.AutoMirrored.Filled.ArrowBack,"Home")
                         }
-                        Image(painter=painterResource(R.drawable.ic_launcher),
+                        Image(painter=painterResource(R.drawable.duopad_original_logo),
                             contentDescription="DuoPad logo",modifier=Modifier.size(32.dp))
                         Column(Modifier.weight(1f)){
                             Text(status.deviceName ?: "Remote control",fontSize=17.sp,
@@ -1101,7 +1101,7 @@ fun DoupadShell(
                 3->{
                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                         IconButton(onClick={page=4}){Icon(Icons.AutoMirrored.Filled.ArrowBack,"Devices",tint=Ink)}
-                        Image(painter=painterResource(R.drawable.ic_launcher),
+                        Image(painter=painterResource(R.drawable.duopad_original_logo),
                             contentDescription="DuoPad logo",modifier=Modifier.size(30.dp))
                         Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){
                             Text(status.deviceName ?: "Connected device",
@@ -1190,7 +1190,7 @@ fun DoupadShell(
                                 Surface(Modifier.size(38.dp),color=Accent,
                                     shape=RoundedCornerShape(10.dp)){
                                     Box(contentAlignment=Alignment.Center){
-                                        Image(painter=painterResource(R.drawable.ic_launcher),
+                                        Image(painter=painterResource(R.drawable.duopad_original_logo),
                                             contentDescription="DuoPad logo",modifier=Modifier.size(37.dp))
                                     }
                                 }
