@@ -26,9 +26,10 @@ fun KeyboardScreen(
 ) {
     val activity=LocalContext.current as? Activity
     DisposableEffect(activity) {
-        val before=activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         activity?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        onDispose { activity?.requestedOrientation=before }
+        // Keyboard exit returns to the portrait PC Workspace (never leaves
+        // the app locked into landscape).
+        onDispose { activity?.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
     }
     val rows = listOf(
         listOf("Esc", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"),
