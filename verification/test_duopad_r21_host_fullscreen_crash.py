@@ -25,6 +25,13 @@ assert 'DuoPadPcFullScreen(' in workspace
 assert 'Windows On-Screen Keyboard' in keyboard
 assert 'COMPUTER' in workspace and 'SYSTEM & STORAGE' in workspace
 assert 'duopad_original_logo' in logo
+# Compose painterResource cannot decode a <bitmap> XML drawable. It must load
+# the original PNG directly, otherwise the app repeatedly crashes on startup.
+assert 'painterResource(id = R.drawable.duopad_original_logo)' in shell
+assert shell.count('painterResource(R.drawable.duopad_original_logo)') == 3
+assert 'painterResource(R.drawable.ic_launcher)' not in shell
+assert 'painterResource(id = R.drawable.ic_launcher)' not in shell
+
 assert (base/'app/src/main/res/drawable-nodpi/duopad_original_logo.png').is_file()
 assert 'def serve(' in host and 'stop_event' in host
 assert '100.64.0.0/10' in host
