@@ -6,8 +6,8 @@ client=(root/'app/src/main/java/com/unipoint/data/remote/PcWorkspaceClient.kt').
 sharing=(root/'app/src/main/java/com/unipoint/presentation/ui/DuoPadHostShare.kt').read_text()
 workflow=(root/'.github/workflows/build-apk.yml').read_text()
 gradle=(root/'app/build.gradle.kts').read_text()
-assert 'pcWorkspaceTab=label; detail="pcWorkspace"' in shell
-assert 'pcWorkspaceTab="Workspace"' in shell and 'pcWorkspaceTab=label' in shell
+assert 'openPcTool(label)' in shell
+assert 'pcWorkspaceTab="Screen"' in shell and 'openPcTool("Info")' in shell
 assert 'initialTab=pcWorkspaceTab' in shell and 'rememberSaveable(initialTab)' in workspace
 assert 'PC_WORKSPACE_' in client and 'INFO_OK' in client and 'DRIVES_OK' in client
 assert 'SCREEN_FRAME_OK' in client and 'REQUEST_FAILED' in client
@@ -21,6 +21,6 @@ for f in ['host/python/unipoint_host.py','host/python/pc_workspace.py','host/pyt
           'host/windows/Install-and-Run-DOUPAD.bat','host/windows/Run-DOUPAD-Host.bat',
           'host/windows/SETUP-FIREWALL-ONCE.bat','host/WINDOWS-SETUP.md']:
     assert (root/'app/src/main/assets/pc-host'/f).read_bytes()==(root/f).read_bytes(), f
-assert 'versionCode = 33' in gradle
+assert 'versionCode = 34' in gradle
 assert 'test_duopad_r18_workspace_host_share.py' in workflow
 print('R18_PC_WORKSPACE_QR_SHARE_CHECKS_PASS')

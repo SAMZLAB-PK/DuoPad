@@ -29,7 +29,7 @@ assert 'decodeBacklogFrames=' in mirror
 assert 'private fun localHostname(ip: String): String?' in adb
 assert 'duopad_verified_device_names' in adb
 assert 'val name=saved?.customName ?: saved?.name ?: device.name' in shell
-assert 'versionCode = 33' in build
-assert 'versionName = "0.18.6-r21-pc-host-pro"' in build
-assert 'DuoPad-Pro-v0.18.6-R21-debug.apk' in workflow
+assert 'versionCode = 34' in build
+assert 'versionName = "0.18.7-r22-single-workspace"' in build
+assert 'DuoPad-Pro-v0.18.7-R22-debug.apk' in workflow
 print('R13_AUDIO_DOUBLE_BACK_VISIBLE_FRAME_DISCOVERY_TEST_PASS')

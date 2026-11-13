@@ -14,7 +14,7 @@ workflow=(base/'.github/workflows/build-pc-host.yml').read_text()
 gradle=(base/'app/build.gradle.kts').read_text()
 assert 'catch (error: Exception)' in pc and 'PC_HEARTBEAT_IO_ERROR' in pc
 assert 'if (output === out) disconnect()' in pc
-assert 'pcWorkspaceTab="Workspace"' in shell
+assert 'pcWorkspaceTab="Screen"' in shell
 assert 'onKeyboard={detail="pcKeyboard"}' in shell
 assert 'setCaptureActivity(DuoPadPortraitCaptureActivity::class.java)' in shell
 assert 'DuoPadPortraitCaptureActivity' in manifest
@@ -37,5 +37,5 @@ assert 'def serve(' in host and 'stop_event' in host
 assert '100.64.0.0/10' in host
 assert 'class HostApp:' in host_gui and 'def load_pin' in host_gui
 assert 'DuoPad-PC-Host-Pro' in workflow
-assert 'versionCode = 33' in gradle and '0.18.6-r21-pc-host-pro' in gradle
+assert 'versionCode = 34' in gradle and '0.18.7-r22-single-workspace' in gradle
 print('DOUPAD_R21_PC_HOST_BRANDING_FULLSCREEN_HEARTBEAT_OK')
