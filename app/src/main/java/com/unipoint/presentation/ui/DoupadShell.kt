@@ -1492,9 +1492,10 @@ fun DoupadShell(
                         if(pc) vm.connectNetwork(ip,p,pin.ifBlank{null},onSuccess={
                             connectRequested=false
                             dialog=null
+                            // Keep one dashboard: the four PC Workspace cards.
+                            pcWorkspaceTab="Screen"
                             page=3
-                            pcWorkspaceTab="Workspace"
-                            detail="pcWorkspace"
+                            detail=null
                         })
                         else vm.connectAndroidIp("$ip:$p")
                     }
