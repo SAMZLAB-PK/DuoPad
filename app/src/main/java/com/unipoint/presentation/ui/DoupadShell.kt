@@ -158,7 +158,7 @@ fun DoupadShell(
     var ip by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("5555") }
     var pin by remember { mutableStateOf("") }
-    var pcWorkspaceTab by rememberSaveable { mutableStateOf("Workspace") }
+    var pcWorkspaceTab by rememberSaveable { mutableStateOf("Screen") }
     var pc by remember { mutableStateOf(false) }
     var pcTransport by rememberSaveable { mutableStateOf("bluetooth") }
     var localError by remember { mutableStateOf("") }
@@ -195,7 +195,7 @@ fun DoupadShell(
                 ip=endpoint.host; port=endpoint.port.toString(); pin=endpoint.pin.orEmpty()
                 connectRequested=true; dialog=null
                 vm.connectNetwork(endpoint.host,endpoint.port,endpoint.pin,onSuccess={
-                    connectRequested=false; dialog=null; pcWorkspaceTab="Workspace"; page=3; detail="pcWorkspace"
+                    connectRequested=false; dialog=null; pcWorkspaceTab="Screen"; page=3; detail=null
                 })
             }
         }
@@ -309,9 +309,9 @@ fun DoupadShell(
                 vm.connectNetwork(ip,port.toIntOrNull()?:27845,trustedPin,onSuccess={
                     connectRequested=false
                     dialog=null
-                    pcWorkspaceTab="Workspace"
+                    pcWorkspaceTab="Screen"
                     page=3
-                    detail="pcWorkspace"
+                    detail=null
                 })
             }else{
                 connectRequested=false
@@ -393,8 +393,10 @@ fun DoupadShell(
                     pcAutoAttempted=true
                     val trustedPin=TrustedPcPairing.read(context,target.endpoint) ?: return@LaunchedEffect
                     pin=trustedPin;pc=true;pcTransport="wifi"
+                    // Background reconnect must never hijack the foreground UI.
+                    // Keep Devices page visible until the user selects the PC.
                     vm.connectNetwork(host,port,trustedPin,onSuccess={
-                        pcWorkspaceTab="Workspace";page=3;detail="pcWorkspace"
+                        MirrorCrashRecorder.note(context,"PC_AUTO_RECONNECTED: saved host connected; navigation unchanged")
                     })
                 } else vm.connectAndroidIp("$host:$port")
             }
@@ -404,7 +406,13 @@ fun DoupadShell(
     LaunchedEffect(dialog,pc,pcTransport) {
         if(dialog=="connect" && pc && pcTransport=="wifi") vm.scanPc()
     }
-    LaunchedEffect(Unit) { vm.scanAndroid() }
+    LaunchedEffect(Unit) {
+        // Fresh app launch always starts at Devices. Saved PC reconnect may run,
+        // but must not open PC Workspace without an explicit user tap.
+        page=4
+        detail=null
+        vm.scanAndroid()
+    }
     BackHandler(detail!=null||page!=4||dialog!=null){if(dialog!=null)dialog=null else if(detail!=null)detail=null else page=4}
     val back={detail=null}
     when(detail) {
@@ -435,7 +443,7 @@ fun DoupadShell(
         "mirrorLog"->{MirrorDiagnosticsScreen(onBack=back);return}
         "gamepadFull"->{AndroidGamepadScreen(onBack=back);return}
         "mappingFull"->{RemoteMappingScreen(onBack=back);return}
-        "pcKeyboard"->{KeyboardScreen(onBack={detail="pcWorkspace"});return}
+        "pcKeyboard"->{KeyboardScreen(onBack={detail=null});return}
         "pcWorkspace"->{
             val pcEndpoint = status.address.orEmpty()
             val pcHost = pcEndpoint.substringBefore(':')
@@ -1123,18 +1131,13 @@ fun DoupadShell(
                         }
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                             ToolTile("System information","",Icons.Default.Memory,Modifier.weight(1f)) {
-                                pcWorkspaceTab="Workspace"; detail="pcWorkspace"
+                                pcWorkspaceTab="Info"; detail="pcWorkspace"
                             }
                             ToolTile("Keyboard","",Icons.Default.Keyboard,Modifier.weight(1f)) {
                                 detail="pcKeyboard"
                             }
                         }
-                        Hint("PC Workspace needs DuoPad Host v4 running on your own PC. Enter its PIN when connecting. Local trusted LAN only.")
-                        OutlinedButton(onClick={pcWorkspaceTab="Screen";detail="pcWorkspace"},modifier=Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.OpenInFull,null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Open full PC Workspace")
-                        }
+                        Hint("DuoPad PC Host Pro v5 must be running on your PC. Connect securely over local Wi-Fi or your private Tailscale network.")
                     } else {
                     val mainTools=listOf(
                         Triple("Install",Icons.Default.InstallMobile,"install"),
