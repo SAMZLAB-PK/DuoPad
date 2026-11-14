@@ -88,6 +88,9 @@ dependencies {
     // ADB (pure Kotlin)
     implementation("dev.mobile:dadb:1.2.10")
 
+    // Official Google Play in-app update availability (Play-installed builds only).
+    implementation("com.google.android.play:app-update:2.1.0")
+
     // QR Code
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")

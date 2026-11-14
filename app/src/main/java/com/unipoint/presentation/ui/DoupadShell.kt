@@ -15,6 +15,9 @@ import com.unipoint.core.util.TrustedPcPairing
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -32,10 +35,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.unipoint.R
@@ -167,6 +173,7 @@ fun DoupadShell(
     var remoteMode by rememberSaveable { mutableIntStateOf(0) }
     var showNumberPad by rememberSaveable { mutableStateOf(false) }
     var showRemoteExtras by rememberSaveable { mutableStateOf(false) }
+    var showManualPc by remember { mutableStateOf(false) }
     var connectRequested by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Target?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -179,6 +186,12 @@ fun DoupadShell(
     var automaticReconnect by remember { mutableStateOf(true) }
     var pcAutoAttempted by rememberSaveable { mutableStateOf(false) }
     var reconnectAttempts by remember { mutableIntStateOf(0) }
+
+    // Auto-scan each time the user enters Devices; no continuous scanning.
+    LaunchedEffect(page) { if(page == 4) vm.scanNearby() }
+    LaunchedEffect(dialog, pc, pcTransport) {
+        if(dialog == "connect" && pc && pcTransport == "wifi") vm.scanPc()
+    }
 
     val status=state.connectionStatus
     val connected=status.state==ConnectionState.CONNECTED
@@ -928,7 +941,21 @@ fun DoupadShell(
                         CompactRemoteKey("Mute",Icons.AutoMirrored.Filled.VolumeOff){key(164)}
                         CompactRemoteKey("Power",Icons.Default.PowerSettingsNew){if(requireTv())dialog="power"}
                     }
-                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
+                    if(state.mode == AppMode.ANDROID) {
+                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                             OutlinedButton(onClick={key(176)},modifier=Modifier.weight(1f).height(36.dp),
+                                 contentPadding=PaddingValues(horizontal=5.dp)) {
+                                 Icon(Icons.Default.Settings,null,Modifier.size(16.dp))
+                                 Spacer(Modifier.width(5.dp));Text("Settings",fontSize=11.sp)
+                             }
+                             OutlinedButton(onClick={key(178)},modifier=Modifier.weight(1f).height(36.dp),
+                                 contentPadding=PaddingValues(horizontal=5.dp)) {
+                                 Icon(Icons.Default.Input,null,Modifier.size(16.dp))
+                                 Spacer(Modifier.width(5.dp));Text("Input",fontSize=11.sp)
+                             }
+                         }
+                     }
+                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
                         horizontalArrangement=Arrangement.SpaceEvenly){
                         VolumeKnob(onUp={key(24)},onDown={key(25)},onMute={key(164)})
                         Column(horizontalAlignment=Alignment.CenterHorizontally,
@@ -980,11 +1007,16 @@ fun DoupadShell(
                         }
                         if(showRemoteExtras){
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)){
-                                listOf("Red" to 183,"Green" to 184,"Yellow" to 185,"Blue" to 186)
-                                    .forEach{(label,code)->
+                                listOf(Triple("Red",183,Color(0xFFCE3434)),
+                                    Triple("Green",184,Color(0xFF278B54)),
+                                    Triple("Yellow",185,Color(0xFFB48913)),
+                                    Triple("Blue",186,Color(0xFF2A64C7)))
+                                    .forEach{(label,code,color)->
                                         OutlinedButton(onClick={key(code)},modifier=Modifier.weight(1f),
-                                            contentPadding=PaddingValues(2.dp)){
-                                            Text(label,fontSize=10.sp,maxLines=1)
+                                            contentPadding=PaddingValues(2.dp),
+                                            border=BorderStroke(1.5.dp,color),
+                                            colors=ButtonDefaults.outlinedButtonColors(contentColor=color)){
+                                            Text(label,fontSize=10.sp,maxLines=1,fontWeight=FontWeight.Bold)
                                         }
                                     }
                             }
@@ -1016,7 +1048,13 @@ fun DoupadShell(
                 }
                 2->{
                     Title("Screen mirror","View your device screen in real time.")
-                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){Button(onClick={},modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(12.dp)){Icon(Icons.Default.Tv,null,Modifier.size(18.dp));Text("  TV → Phone",fontSize=12.sp)};OutlinedButton(onClick={dialog="cast"},modifier=Modifier.weight(1f),shape=RoundedCornerShape(12.dp)){Text("Phone → TV",fontSize=12.sp)}}
+                    Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){Button(onClick={},modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(12.dp)){Icon(Icons.Default.Tv,null,Modifier.size(18.dp));Text("  TV → Phone",fontSize=12.sp)};OutlinedButton(onClick={
+                        runCatching {
+                            context.startActivity(Intent(android.provider.Settings.ACTION_CAST_SETTINGS))
+                        }.onFailure {
+                            message("System Cast is not available on this phone. Open Cast or Smart View in phone settings.")
+                        }
+                    },modifier=Modifier.weight(1f),shape=RoundedCornerShape(12.dp)){Text("Phone → TV · Cast",fontSize=12.sp)}}
                     Surface(color=Pale,shape=RoundedCornerShape(16.dp),border=BorderStroke(1.dp,Border)){Column(Modifier.fillMaxWidth().height(210.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){Icon(Icons.Default.Tv,null,Modifier.size(54.dp),tint=Muted);Spacer(Modifier.height(12.dp));Text(if(connected)status.deviceName?:"TV screen" else "Your screen, right here",fontWeight=FontWeight.SemiBold);Text("Connect an Android TV to begin.",fontSize=12.sp,color=Muted)}}
                     OutlinedButton(onClick={
                         if(requireTv()) {
@@ -1150,7 +1188,12 @@ fun DoupadShell(
                                 openPcTool("Keyboard")
                             }
                         }
-                        Hint("DuoPad PC Host Pro v5 must be running on your PC. Connect securely over local Wi-Fi or your private Tailscale network.")
+                        OutlinedButton(onClick={openPcTool("Software")},modifier=Modifier.fillMaxWidth()) {
+                             Icon(Icons.Default.Apps,null,Modifier.size(19.dp))
+                             Spacer(Modifier.width(9.dp));Text("Installed software",fontWeight=FontWeight.SemiBold)
+                             Spacer(Modifier.weight(1f));Icon(Icons.Default.ChevronRight,null,Modifier.size(17.dp))
+                         }
+                         Hint("DuoPad PC Host Pro v5 must be running on your PC. Connect securely over local Wi-Fi or your private Tailscale network.")
                     } else {
                     val mainTools=listOf(
                         Triple("Install",Icons.Default.InstallMobile,"install"),
@@ -1326,56 +1369,54 @@ fun DoupadShell(
                                 LinearProgressIndicator(Modifier.fillMaxWidth())
                                 Text("Looking for DuoPad Pro Host on your network…",fontSize=12.sp,color=Muted)
                             }
-                            state.pcDevices.take(6).forEach { host ->
+                            state.pcDevices.filter { it.isReachable }.take(4).forEach { host ->
                                 OutlinedButton(onClick={
                                     val h=host.address.substringBefore(':')
                                     val p=host.address.substringAfter(':',"27845").toIntOrNull()?:27845
                                     ip=h;port=p.toString()
-                                    if(host.requiresPin) pin="" else { vm.connectNetwork(h,p,null);dialog=null }
+                                    if(host.requiresPin) { pin="";showManualPc=true } else {
+                                        vm.connectNetwork(h,p,null,onSuccess={dialog=null;page=3;detail=null})
+                                    }
                                 },modifier=Modifier.fillMaxWidth()) {
                                     Icon(Icons.Default.Computer,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp))
                                     Column(Modifier.weight(1f)) { Text(host.name,maxLines=1);Text(host.address+if(host.isReachable)" · Online" else " · Saved",fontSize=11.sp,color=Muted) }
                                 }
                             }
                             if(!state.isScanningPc && state.pcDevices.none { it.isReachable }) {
-                                Surface(shape=RoundedCornerShape(14.dp),color=Pale,border=BorderStroke(1.dp,Border)) {
-                                    Column(Modifier.fillMaxWidth().padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        Text("DuoPad Pro Host required for Wi-Fi",fontWeight=FontWeight.Bold)
-                                        Text("Bluetooth Direct works without any PC software. For Wi-Fi control, run the small DuoPad Pro Host on Windows, macOS or Linux.",fontSize=12.sp,color=Muted)
-                                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                            OutlinedButton(onClick={vm.scanPc()},enabled=!state.isScanningPc,modifier=Modifier.weight(1f)){
-                                                Text(if(state.hasScannedPc) "Search Again" else "Search PC")
-                                            }
-                                            Button(onClick={
-                                                runCatching { DuoPadHostShare.share(context) }
-                                                    .onFailure { message("Could not share the Windows Host package: ${it.message}") }
-                                            },modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Get Host")}
-                                        }
-                                        TextButton(onClick={scanPcQr()},modifier=Modifier.fillMaxWidth()) {
-                                            Icon(Icons.Default.QrCodeScanner,null,Modifier.size(18.dp))
-                                            Spacer(Modifier.width(7.dp)); Text("Scan Host QR Code")
-                                        }
-                                        TextButton(onClick={pcTransport="bluetooth"},modifier=Modifier.fillMaxWidth()){Text("Use Bluetooth Direct instead")}
-                                    }
+                                Text("No PC Host detected. Start DuoPad Host on your PC and allow TCP 27845 / UDP 27846 in the local firewall.",
+                                    fontSize=11.sp,color=Muted)
+                            }
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                                OutlinedButton(onClick={vm.scanPc()},enabled=!state.isScanningPc,modifier=Modifier.weight(1f),
+                                    contentPadding=PaddingValues(horizontal=5.dp)) {
+                                    Icon(Icons.Default.Refresh,null,Modifier.size(15.dp));Text("Scan",fontSize=11.sp)
+                                }
+                                OutlinedButton(onClick={scanPcQr()},modifier=Modifier.weight(1f),
+                                    contentPadding=PaddingValues(horizontal=5.dp)) {
+                                    Icon(Icons.Default.QrCodeScanner,null,Modifier.size(15.dp));Text("QR",fontSize=11.sp)
+                                }
+                                OutlinedButton(onClick={
+                                    runCatching { DuoPadHostShare.share(context) }
+                                        .onFailure { message("Could not share Host: ${it.message}") }
+                                },modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=5.dp)) {
+                                    Icon(Icons.Default.Computer,null,Modifier.size(15.dp));Text("Get Host",fontSize=11.sp)
                                 }
                             }
-                            Text("Manual Wi-Fi connection",fontWeight=FontWeight.SemiBold)
-                            OutlinedTextField(ip,{ip=it},label={Text("PC IP address")},singleLine=true)
-                            OutlinedTextField(port,{port=it.filter(Char::isDigit)},label={Text("Port")},singleLine=true)
-                            OutlinedTextField(pin,{pin=it},label={Text("Host pairing PIN (optional)")},singleLine=true)
-                            OutlinedButton(onClick={scanPcQr()},modifier=Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.QrCodeScanner,null,Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp)); Text("Connect by QR Code")
+                            TextButton(onClick={showManualPc=!showManualPc},modifier=Modifier.fillMaxWidth()) {
+                                Icon(if(showManualPc)Icons.Default.ExpandLess else Icons.Default.Edit,null,Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if(showManualPc)"Hide manual connection" else "Enter PC address manually",fontSize=12.sp)
                             }
-                            OutlinedButton(onClick={
-                                runCatching { DuoPadHostShare.share(context) }
-                                    .onFailure { message("Windows Host share failed: ${it.message}") }
-                            },modifier=Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.Share,null,Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp)); Text("Send Windows Host to PC · Bluetooth / Quick Share")
+                            if(showManualPc) {
+                                OutlinedTextField(ip,{ip=it},label={Text("PC IP or Tailscale address")},
+                                    singleLine=true,modifier=Modifier.fillMaxWidth())
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                    OutlinedTextField(port,{port=it.filter(Char::isDigit)},label={Text("Port")},
+                                        singleLine=true,modifier=Modifier.weight(.42f))
+                                    OutlinedTextField(pin,{pin=it.trim().take(24)},label={Text("Host PIN")},
+                                        singleLine=true,modifier=Modifier.weight(.58f))
+                                }
                             }
-                            Text("On Windows, accept the ZIP, extract it and run Run-DOUPAD-Host.bat. User approval is required; automatic installation is not supported.",
-                                fontSize=11.sp,color=Muted)
                         }
                     }
                     if(localError.isNotBlank())Text(localError,color=MaterialTheme.colorScheme.error)
@@ -1577,9 +1618,17 @@ fun DoupadShell(
     }
 }
 @Composable private fun VolumeKnob(onUp:()->Unit,onDown:()->Unit,onMute:()->Unit){
+    val haptics = LocalHapticFeedback.current
+    var rotation by remember { mutableFloatStateOf(0f) }
+    val turn by animateFloatAsState(rotation,animationSpec=spring(stiffness=Spring.StiffnessLow),label="volume-knob")
     Column(horizontalAlignment=Alignment.CenterHorizontally){
         Box(Modifier.size(106.dp),contentAlignment=Alignment.Center){
-            Surface(onClick=onMute,modifier=Modifier.size(65.dp),shape=CircleShape,
+            // The marker rotates and springs to rest after each actual volume action.
+            Box(Modifier.size(88.dp).graphicsLayer { rotationZ=turn },
+                contentAlignment=Alignment.TopCenter) {
+                Box(Modifier.padding(top=1.dp).size(9.dp).background(Teal,CircleShape))
+            }
+            Surface(onClick={rotation+=12f;haptics.performHapticFeedback(HapticFeedbackType.LongPress);onMute()},modifier=Modifier.size(65.dp),shape=CircleShape,
                 color=Paper,border=BorderStroke(2.dp,Teal)){
                 Column(horizontalAlignment=Alignment.CenterHorizontally,
                     verticalArrangement=Arrangement.Center){
@@ -1596,11 +1645,11 @@ fun DoupadShell(
             }
         }
         Row(verticalAlignment=Alignment.CenterVertically){
-            IconButton(onClick=onDown,modifier=Modifier.size(34.dp)){
+            IconButton(onClick={rotation-=28f;haptics.performHapticFeedback(HapticFeedbackType.LongPress);onDown()},modifier=Modifier.size(34.dp)){
                 Icon(Icons.Default.Remove,"Volume down")
             }
             Text("Volume",fontSize=10.sp,color=Muted)
-            IconButton(onClick=onUp,modifier=Modifier.size(34.dp)){
+            IconButton(onClick={rotation+=28f;haptics.performHapticFeedback(HapticFeedbackType.LongPress);onUp()},modifier=Modifier.size(34.dp)){
                 Icon(Icons.Default.Add,"Volume up")
             }
         }

@@ -96,7 +96,7 @@ class NetworkPcDataSource constructor(
         PcDiagnosticRecorder.note(context, "PC_DISCOVERY_UDP_BEGIN: 3 rounds on port ${PcDiscoveryProtocol.UDP_PORT}")
         udpDiscover(local).forEach { device -> found[device.id] = device }
         PcDiagnosticRecorder.note(context, "PC_DISCOVERY_UDP_END: found=${found.values.count { it.isReachable }}")
-        if (found.values.any { it.isReachable }) return@withContext sortDevices(found.values)
+        // Continue checking reachable LAN endpoints rather than stopping after the first PC.
 
         // 3) TCP fallback on the actual LAN subnet, plus the last known subnet if it changed.
         val lastHost = history.firstOrNull()?.host ?: prefs.getString("last_pc", null)?.substringBefore(':')
@@ -117,9 +117,10 @@ class NetworkPcDataSource constructor(
                 }.awaitAll().filterNotNull().forEach { found[it.id] = it }
             }
         }
-        if (found.values.any { it.isReachable }) return@withContext sortDevices(found.values)
+        // Continue checking reachable LAN endpoints rather than stopping after the first PC.
 
-        // 4) Exhaustive scan is last resort only, and never wastes time on unrelated default subnets.
+        // 4) Bounded /24 TCP probes find hosts whose UDP discovery is blocked by firewall.
+        // Verify DuoPad protocol before showing a device. Do not report every open IP as a PC.
         PcDiagnosticRecorder.note(context, "PC_DISCOVERY_FULL_SCAN: no quick result; scanning up to 2 LAN subnets")
         for (subnet in subnets.take(2)) {
             (1..254).filterNot { it in priority }.chunked(56).forEach { chunk ->
@@ -135,7 +136,7 @@ class NetworkPcDataSource constructor(
                         }
                     }.awaitAll().filterNotNull().forEach { found[it.id] = it }
                 }
-                if (found.values.any { it.isReachable }) return@withContext sortDevices(found.values)
+                // Continue checking reachable LAN endpoints rather than stopping after the first PC.
             }
         }
         PcDiagnosticRecorder.note(context, "PC_DISCOVERY_END: online=${found.values.count { it.isReachable }} saved=${found.values.count { it.isSaved }}")

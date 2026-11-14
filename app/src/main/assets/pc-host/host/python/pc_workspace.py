@@ -13,6 +13,9 @@ import os
 import platform
 import re
 import shutil
+import subprocess
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
 import socket
 import struct
 import sys
@@ -44,6 +47,110 @@ def _windows_drives():
     return [f"{chr(65+i)}:\\" for i in range(26) if bitmask & (1 << i)]
 
 
+def _read_windows_hardware_slow():
+    """Read-only WMI/CIM inventory, cached to avoid restarting PowerShell per request."""
+    if not sys.platform.startswith("win"):
+        return {"cpuManufacturer": "", "cpuModel": "", "ramModules": []}
+    script = (
+        "$ErrorActionPreference='SilentlyContinue';"
+        "$cpu=Get-CimInstance Win32_Processor | Select-Object -First 1 Name,Manufacturer,NumberOfCores;"
+        "$ram=@(Get-CimInstance Win32_PhysicalMemory | Select-Object Manufacturer,PartNumber,Capacity,Speed,DeviceLocator);"
+        "@{cpuManufacturer=$cpu.Manufacturer;cpuModel=$cpu.Name;cpuCores=$cpu.NumberOfCores;ramModules=$ram}"
+        " | ConvertTo-Json -Compress -Depth 5"
+    )
+    try:
+        process = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        result = json.loads(process.stdout) if process.returncode == 0 else {}
+        return result if isinstance(result, dict) else {}
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return {}
+
+
+
+# CIM can spend seconds starting PowerShell on a cold Windows session.
+# Never hold a control protocol reply hostage to that process.
+_hardware_worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="DuoPadHardware")
+_hardware_future = None
+
+
+def _windows_hardware():
+    global _hardware_future
+    fallback = {"cpuManufacturer": "", "cpuModel": platform.processor() or "", "ramModules": []}
+    if not sys.platform.startswith("win"):
+        return fallback
+    # Windows registry CPU identification is fast and available even while CIM warms up.
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
+            for source, target in (("ProcessorNameString", "cpuModel"),
+                                   ("VendorIdentifier", "cpuManufacturer")):
+                try:
+                    fallback[target] = str(winreg.QueryValueEx(key, source)[0]).strip()
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    if _hardware_future is None:
+        _hardware_future = _hardware_worker.submit(_read_windows_hardware_slow)
+    if _hardware_future.done():
+        try:
+            detailed = _hardware_future.result()
+            if isinstance(detailed, dict):
+                fallback.update({key: value for key, value in detailed.items()
+                                 if value is not None and value != ""})
+        except Exception:
+            pass
+    return fallback
+
+
+@lru_cache(maxsize=1)
+def _installed_software(limit=140):
+    """List visible uninstall-registry entries; never call Win32_Product (which can repair MSI)."""
+    if not sys.platform.startswith("win"):
+        return []
+    try:
+        import winreg
+    except ImportError:
+        return []
+    results = {}
+    uninstall = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    for hive, view in (
+        (winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_64KEY),
+        (winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_32KEY),
+        (winreg.HKEY_CURRENT_USER, winreg.KEY_WOW64_64KEY),
+        (winreg.HKEY_CURRENT_USER, winreg.KEY_WOW64_32KEY),
+    ):
+        try:
+            key = winreg.OpenKey(hive, uninstall, 0, winreg.KEY_READ | view)
+        except OSError:
+            continue
+        with key:
+            for index in range(winreg.QueryInfoKey(key)[0]):
+                try:
+                    with winreg.OpenKey(key, winreg.EnumKey(key, index)) as item:
+                        def field(name, default=""):
+                            try:
+                                return str(winreg.QueryValueEx(item, name)[0]).strip()
+                            except OSError:
+                                return default
+                        name = field("DisplayName")[:110]
+                        if not name or field("SystemComponent") == "1" or field("ParentKeyName"):
+                            continue
+                        version = field("DisplayVersion")[:45]
+                        publisher = field("Publisher")[:80]
+                        results[(name.casefold(), version)] = {
+                            "name": name, "version": version, "publisher": publisher
+                        }
+                except (OSError, ValueError):
+                    continue
+    return sorted(results.values(), key=lambda item: item["name"].casefold())[:limit]
+
+
 def _machine_info():
     drives = _windows_drives()
     info = {"name": socket.gethostname(), "os": platform.platform(),
@@ -52,6 +159,10 @@ def _machine_info():
             "user": os.environ.get("USERNAME") or os.environ.get("USER", ""),
             "home": str(Path.home()), "drives": len(drives), "capabilities":
             ["desktop-preview", "mouse-keyboard", "files", "drives", "system-info", "clipboard"]}
+    info.update(_windows_hardware())
+    software = _installed_software()
+    info["installedSoftware"] = software
+    info["softwareCount"] = len(software)
     if sys.platform.startswith("win"):
         class MemoryStatus(ctypes.Structure):
             _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
@@ -134,6 +245,29 @@ class PcWorkspaceService:
         if frame.width > max_width:
             new_height = max(1, round(frame.height * max_width / frame.width))
             frame = frame.resize((max_width, new_height), Image.Resampling.BILINEAR)
+        if sys.platform.startswith("win"):
+            # mss captures the desktop but normally omits the Windows hardware cursor.
+            # Overlay a high-contrast pointer using GetCursorPos in monitor coordinates.
+            try:
+                from PIL import ImageDraw
+                class Point(ctypes.Structure):
+                    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+                point = Point()
+                if ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
+                    monitor = monitors[monitor_index]
+                    local_x = point.x - int(monitor["left"])
+                    local_y = point.y - int(monitor["top"])
+                    if 0 <= local_x < int(monitor["width"]) and 0 <= local_y < int(monitor["height"]):
+                        px = round(local_x * frame.width / int(monitor["width"]))
+                        py = round(local_y * frame.height / int(monitor["height"]))
+                        size = max(12, round(frame.width / 85))
+                        draw = ImageDraw.Draw(frame)
+                        poly = [(px,py),(px,py+size),(px+size//3,py+size*3//4),
+                                (px+size//2,py+size),(px+size*3//4,py+size*9//10),
+                                (px+size//2,py+size*2//3),(px+size*3//4,py+size//2)]
+                        draw.polygon(poly,fill="white",outline="black",width=2)
+            except (OSError, AttributeError, ValueError, ImportError, ZeroDivisionError):
+                pass
         output = io.BytesIO()
         quality = max(30, min(int(options.get("quality", 58)), 80))
         frame.save(output, "JPEG", quality=quality, optimize=False)

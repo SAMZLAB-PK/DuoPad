@@ -1,6 +1,8 @@
 package com.unipoint.presentation.ui
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +13,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
@@ -18,6 +23,8 @@ import androidx.core.view.WindowCompat
 import com.unipoint.presentation.ui.navigation.UniPointNavHost
 import com.unipoint.presentation.ui.theme.UniPointTheme
 import dagger.hilt.android.AndroidEntryPoint
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.install.model.UpdateAvailability
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -30,6 +37,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val appearancePrefs = getSharedPreferences("doupad", MODE_PRIVATE)
+        val playUpdateAvailable = mutableStateOf(false)
+        // Google Play verifies the installed track/version. A sideloaded APK might not have availability data.
+        runCatching {
+            AppUpdateManagerFactory.create(this).appUpdateInfo.addOnSuccessListener { info ->
+                if (info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE) {
+                    playUpdateAvailable.value = true
+                }
+            }
+        }
         setContent {
             var appearance by remember { mutableStateOf(
                 appearancePrefs.getString("appearance", "light") ?: "light"
@@ -55,6 +71,23 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     )
+                    if (playUpdateAvailable.value) {
+                        AlertDialog(
+                            onDismissRequest = { playUpdateAvailable.value = false },
+                            title = { Text("DuoPad Pro update available") },
+                            text = { Text("A newer version is available on Google Play. Update to receive fixes and improvements.") },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    playUpdateAvailable.value = false
+                                    startActivity(Intent(Intent.ACTION_VIEW,
+                                        Uri.parse("https://play.google.com/store/apps/details?id=$packageName")))
+                                }) { Text("Open Play Store") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { playUpdateAvailable.value = false }) { Text("Later") }
+                            }
+                        )
+                    }
                 }
             }
         }

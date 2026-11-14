@@ -43,8 +43,9 @@ object DuoColors {
 // Warm handmade Light is the screenshot reference. Midnight is the preserved dark
 // theme, and Bento Clay uses the exact swatches from the supplied theme ZIP.
 private val HandmadeLight = lightColorScheme(
-    primary=Color(0xFFC25F38),onPrimary=Color.White,
-    primaryContainer=Color(0xFFF6E5D8),onPrimaryContainer=Color(0xFF793516),
+    // Light appearance uses a calm light-grey accent; dark/bento stay unchanged.
+    primary=Color(0xFFD1D5DB),onPrimary=Color(0xFF252A30),
+    primaryContainer=Color(0xFFE9EBEE),onPrimaryContainer=Color(0xFF39434D),
     secondary=Color(0xFF50704B),onSecondary=Color.White,
     secondaryContainer=Color(0xFFE0EAD9),onSecondaryContainer=Color(0xFF29402B),
     tertiary=Color(0xFF9A8062),onTertiary=Color.White,
