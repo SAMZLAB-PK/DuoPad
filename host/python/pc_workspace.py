@@ -39,7 +39,7 @@ class PhoneMirrorFrames:
 
     @classmethod
     def push(cls, jpeg, width, height, source):
-        if len(jpeg) > MAX_FRAME_BYTES or not jpeg.startswith(b"\\xff\\xd8"):
+        if len(jpeg) > MAX_FRAME_BYTES or not jpeg.startswith(b"\xff\xd8"):
             raise ValueError("Invalid JPEG phone frame")
         if not (160 <= width <= 4096 and 160 <= height <= 4096):
             raise ValueError("Invalid phone capture dimensions")
