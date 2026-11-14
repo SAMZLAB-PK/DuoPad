@@ -55,8 +55,18 @@ def _read_windows_hardware_slow():
         "$ErrorActionPreference='SilentlyContinue';"
         "$cpu=Get-CimInstance Win32_Processor | Select-Object -First 1 Name,Manufacturer,NumberOfCores;"
         "$ram=@(Get-CimInstance Win32_PhysicalMemory | Select-Object Manufacturer,PartNumber,Capacity,Speed,DeviceLocator);"
-        "@{cpuManufacturer=$cpu.Manufacturer;cpuModel=$cpu.Name;cpuCores=$cpu.NumberOfCores;ramModules=$ram}"
-        " | ConvertTo-Json -Compress -Depth 5"
+        "$physical=@(Get-PhysicalDisk);"
+        "$disks=@(Get-Disk | ForEach-Object {"
+        " $d=$_; $pm=$physical | Where-Object FriendlyName -eq $d.FriendlyName | Select-Object -First 1;"
+        " $media=if($pm){[string]$pm.MediaType}else{'Unspecified'};"
+        " $bus=[string]$d.BusType;"
+        " $kind=if($bus -eq 'NVMe'){'NVMe SSD'}"
+        " elseif($media -eq 'SSD' -or $d.FriendlyName -match 'SSD'){'SSD'}"
+        " elseif($media -eq 'HDD'){'HDD'}else{'Unknown'};"
+        " [pscustomobject]@{number=$d.Number;model=$d.FriendlyName;type=$kind;bus=$bus;media=$media;size=$d.Size}"
+        " });"
+        "@{cpuManufacturer=$cpu.Manufacturer;cpuModel=$cpu.Name;cpuCores=$cpu.NumberOfCores;"
+        "ramModules=@($ram);diskInventory=@($disks)} | ConvertTo-Json -Compress -Depth 7"
     )
     try:
         process = subprocess.run(
@@ -79,7 +89,8 @@ _hardware_future = None
 
 def _windows_hardware():
     global _hardware_future
-    fallback = {"cpuManufacturer": "", "cpuModel": platform.processor() or "", "ramModules": []}
+    fallback = {"cpuManufacturer": "", "cpuModel": platform.processor() or "",
+                "ramModules": [], "diskInventory": []}
     if not sys.platform.startswith("win"):
         return fallback
     # Windows registry CPU identification is fast and available even while CIM warms up.
@@ -151,6 +162,20 @@ def _installed_software(limit=140):
     return sorted(results.values(), key=lambda item: item["name"].casefold())[:limit]
 
 
+def _intel_cpu_generation(name):
+    """Report generation only when Intel's numbered Core model identifies it."""
+    match = re.search(r"\bi([3579])-([0-9]{4,5})\b", name or "", re.I)
+    if not match:
+        return ""
+    sku = match.group(2)
+    generation = int(sku[:2]) if len(sku) == 5 else int(sku[0])
+    if generation < 2 or generation > 14:
+        return ""
+    suffix = "th" if generation % 100 in (11, 12, 13) or generation % 10 not in (1,2,3) else {
+        1: "st", 2: "nd", 3: "rd"}[generation % 10]
+    return f"Intel Core i{match.group(1)} · {generation}{suffix} Gen"
+
+
 def _machine_info():
     drives = _windows_drives()
     info = {"name": socket.gethostname(), "os": platform.platform(),
@@ -160,6 +185,7 @@ def _machine_info():
             "home": str(Path.home()), "drives": len(drives), "capabilities":
             ["desktop-preview", "mouse-keyboard", "files", "drives", "system-info", "clipboard"]}
     info.update(_windows_hardware())
+    info["cpuGeneration"] = _intel_cpu_generation(info.get("cpuModel", ""))
     software = _installed_software()
     info["installedSoftware"] = software
     info["softwareCount"] = len(software)
