@@ -468,7 +468,7 @@ class ClientHandler(threading.Thread):
             text = payload.decode("utf-8", errors="ignore")
             self.injector.type_text(text)
 
-        elif ptype in (0x30, 0x31, 0x32, 0x33, 0x34, 0x40, 0x21, 0x22):
+        elif ptype in (0x30, 0x31, 0x32, 0x33, 0x34, 0x40, 0x21, 0x22, 0x50):
             self.workspace.handle(self.conn, ptype, payload, send_packet, read_exact)
 
 
