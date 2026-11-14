@@ -167,6 +167,7 @@ fun DoupadShell(
     var remoteMode by rememberSaveable { mutableIntStateOf(0) }
     var showNumberPad by rememberSaveable { mutableStateOf(false) }
     var showRemoteExtras by rememberSaveable { mutableStateOf(false) }
+    var showManualPc by remember { mutableStateOf(false) }
     var connectRequested by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Target?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -179,6 +180,12 @@ fun DoupadShell(
     var automaticReconnect by remember { mutableStateOf(true) }
     var pcAutoAttempted by rememberSaveable { mutableStateOf(false) }
     var reconnectAttempts by remember { mutableIntStateOf(0) }
+
+    // Auto-scan each time the user enters Devices; no continuous scanning.
+    LaunchedEffect(page) { if(page == 4) vm.scanNearby() }
+    LaunchedEffect(dialog, pc, pcTransport) {
+        if(dialog == "connect" && pc && pcTransport == "wifi") vm.scanPc()
+    }
 
     val status=state.connectionStatus
     val connected=status.state==ConnectionState.CONNECTED
@@ -928,7 +935,21 @@ fun DoupadShell(
                         CompactRemoteKey("Mute",Icons.AutoMirrored.Filled.VolumeOff){key(164)}
                         CompactRemoteKey("Power",Icons.Default.PowerSettingsNew){if(requireTv())dialog="power"}
                     }
-                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
+                    if(state.mode == AppMode.ANDROID) {
+                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                             OutlinedButton(onClick={key(176)},modifier=Modifier.weight(1f).height(36.dp),
+                                 contentPadding=PaddingValues(horizontal=5.dp)) {
+                                 Icon(Icons.Default.Settings,null,Modifier.size(16.dp))
+                                 Spacer(Modifier.width(5.dp));Text("Settings",fontSize=11.sp)
+                             }
+                             OutlinedButton(onClick={key(178)},modifier=Modifier.weight(1f).height(36.dp),
+                                 contentPadding=PaddingValues(horizontal=5.dp)) {
+                                 Icon(Icons.Default.Input,null,Modifier.size(16.dp))
+                                 Spacer(Modifier.width(5.dp));Text("Input",fontSize=11.sp)
+                             }
+                         }
+                     }
+                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,
                         horizontalArrangement=Arrangement.SpaceEvenly){
                         VolumeKnob(onUp={key(24)},onDown={key(25)},onMute={key(164)})
                         Column(horizontalAlignment=Alignment.CenterHorizontally,
@@ -980,11 +1001,16 @@ fun DoupadShell(
                         }
                         if(showRemoteExtras){
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)){
-                                listOf("Red" to 183,"Green" to 184,"Yellow" to 185,"Blue" to 186)
-                                    .forEach{(label,code)->
+                                listOf(Triple("Red",183,Color(0xFFCE3434)),
+                                    Triple("Green",184,Color(0xFF278B54)),
+                                    Triple("Yellow",185,Color(0xFFB48913)),
+                                    Triple("Blue",186,Color(0xFF2A64C7)))
+                                    .forEach{(label,code,color)->
                                         OutlinedButton(onClick={key(code)},modifier=Modifier.weight(1f),
-                                            contentPadding=PaddingValues(2.dp)){
-                                            Text(label,fontSize=10.sp,maxLines=1)
+                                            contentPadding=PaddingValues(2.dp),
+                                            border=BorderStroke(1.5.dp,color),
+                                            colors=ButtonDefaults.outlinedButtonColors(contentColor=color)){
+                                            Text(label,fontSize=10.sp,maxLines=1,fontWeight=FontWeight.Bold)
                                         }
                                     }
                             }
@@ -1150,7 +1176,12 @@ fun DoupadShell(
                                 openPcTool("Keyboard")
                             }
                         }
-                        Hint("DuoPad PC Host Pro v5 must be running on your PC. Connect securely over local Wi-Fi or your private Tailscale network.")
+                        OutlinedButton(onClick={openPcTool("Software")},modifier=Modifier.fillMaxWidth()) {
+                             Icon(Icons.Default.Apps,null,Modifier.size(19.dp))
+                             Spacer(Modifier.width(9.dp));Text("Installed software",fontWeight=FontWeight.SemiBold)
+                             Spacer(Modifier.weight(1f));Icon(Icons.Default.ChevronRight,null,Modifier.size(17.dp))
+                         }
+                         Hint("DuoPad PC Host Pro v5 must be running on your PC. Connect securely over local Wi-Fi or your private Tailscale network.")
                     } else {
                     val mainTools=listOf(
                         Triple("Install",Icons.Default.InstallMobile,"install"),
