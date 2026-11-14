@@ -5,6 +5,7 @@ pluginManagement {
             includeGroupByRegex("androidx.*")
             includeGroupByRegex("com\\.google\\.testing.*")
             includeGroup("com.google.android.play")
+            includeGroup("com.google.android.gms")
         } }
         mavenCentral()
         gradlePluginPortal()
@@ -18,6 +19,7 @@ dependencyResolutionManagement {
             includeGroupByRegex("androidx.*")
             includeGroupByRegex("com\\.google\\.testing.*")
             includeGroup("com.google.android.play")
+            includeGroup("com.google.android.gms")
         } }
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
