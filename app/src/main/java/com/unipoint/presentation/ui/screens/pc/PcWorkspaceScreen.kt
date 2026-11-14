@@ -166,6 +166,15 @@ fun PcWorkspaceScreen(
                     info = null
                     info = client.information()
                     message = "System information updated"
+                    if (tab == "Info") {
+                        // Windows CIM hardware inspection is warmed in background by Host.
+                        // Recheck RAM slots without blocking the first information screen.
+                        for (attempt in 0 until 3) {
+                            if ((info?.optJSONArray("ramModules")?.length() ?: 0) > 0) break
+                            delay(2400)
+                            info = client.information()
+                        }
+                    }
                 }
             }
         } catch (_: CancellationException) {
