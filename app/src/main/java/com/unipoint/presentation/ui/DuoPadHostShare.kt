@@ -25,12 +25,23 @@ object DuoPadHostShare {
     )
 
     fun share(context: Context) {
-        val file = File(context.cacheDir, "DuoPad-Windows-Host-v4-Python.zip")
-        ZipOutputStream(FileOutputStream(file).buffered()).use { zip ->
-            for (path in paths) {
-                zip.putNextEntry(ZipEntry(path))
-                context.assets.open("pc-host/$path").use { it.copyTo(zip) }
-                zip.closeEntry()
+        val embeddedName = "DuoPad-PC-Companion-R24.zip"
+        val embeddedAvailable = context.assets.list("pc-host")?.contains(embeddedName) == true
+        val file = File(context.cacheDir,
+            if(embeddedAvailable) embeddedName else "DuoPad-Windows-Host-Python-Fallback.zip")
+        if (embeddedAvailable) {
+            // CI compiled this real Windows GUI EXE and packaged it inside the APK.
+            context.assets.open("pc-host/$embeddedName").use { input ->
+                FileOutputStream(file).use { output -> input.copyTo(output) }
+            }
+        } else {
+            // Source-only local builds still retain the original manually installed Python fallback.
+            ZipOutputStream(FileOutputStream(file).buffered()).use { zip ->
+                for (path in paths) {
+                    zip.putNextEntry(ZipEntry(path))
+                    context.assets.open("pc-host/$path").use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
             }
         }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
