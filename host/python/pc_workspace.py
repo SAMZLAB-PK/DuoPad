@@ -20,11 +20,39 @@ import socket
 import struct
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
 MAX_FILE_BYTES = 1024 * 1024 * 1024  # explicit cap: 1 GiB per transfer
 MAX_FRAME_BYTES = 3 * 1024 * 1024
+
+# Authenticated JPEG frames from explicitly approved Android MediaProjection.
+# The Host never initiates phone capture; the phone controls Start/Stop.
+class PhoneMirrorFrames:
+    _lock = threading.Lock()
+    _jpeg = b""
+    _width = 0
+    _height = 0
+    _seen_at = 0.0
+    _source = ""
+
+    @classmethod
+    def push(cls, jpeg, width, height, source):
+        if len(jpeg) > MAX_FRAME_BYTES or not jpeg.startswith(b"\\xff\\xd8"):
+            raise ValueError("Invalid JPEG phone frame")
+        if not (160 <= width <= 4096 and 160 <= height <= 4096):
+            raise ValueError("Invalid phone capture dimensions")
+        with cls._lock:
+            cls._jpeg = jpeg
+            cls._width, cls._height = width, height
+            cls._seen_at = time.monotonic()
+            cls._source = str(source)[:80]
+
+    @classmethod
+    def snapshot(cls):
+        with cls._lock:
+            return cls._jpeg, cls._width, cls._height, cls._seen_at, cls._source
 
 
 def _reply(send_packet, conn, typ, value):
@@ -355,6 +383,18 @@ class PcWorkspaceService:
                         raise
                 os.replace(temp_name, target)
                 _reply(send_packet, conn, typ, {"ok": True, "path": str(target), "bytes": size})
+            elif typ == 0x50:
+                # One authenticated metadata packet followed by an exact-size JPEG.
+                # Bound bytes before allocating and reply with back-pressure.
+                size = int(req.get("size", 0))
+                width, height = int(req.get("width", 0)), int(req.get("height", 0))
+                if not (10 <= size <= MAX_FRAME_BYTES):
+                    raise ValueError("Phone frame exceeds the permitted size")
+                jpeg = read_exact(conn, size)
+                if jpeg is None or len(jpeg) != size:
+                    raise ConnectionError("Incomplete phone mirror frame")
+                PhoneMirrorFrames.push(jpeg, width, height, req.get("name", "Android phone"))
+                _reply(send_packet, conn, typ, {"ok": True})
             elif typ == 0x40:
                 jpeg, width, height = self._frame(req)
                 _reply(send_packet, conn, typ, {"ok": True, "size": len(jpeg),
