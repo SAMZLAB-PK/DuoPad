@@ -376,6 +376,9 @@ fun PcWorkspaceScreen(
                             Text("PROCESSOR",color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
                             Text(data.optString("cpuModel",data.optString("cpu","Unknown processor")),
                                 style=MaterialTheme.typography.bodyMedium,fontWeight=FontWeight.SemiBold)
+                            val cpuGeneration = data.optString("cpuGeneration")
+                            if(cpuGeneration.isNotBlank()) Text(cpuGeneration,
+                                style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
                             val cpuMaker = data.optString("cpuManufacturer")
                             if(cpuMaker.isNotBlank()) Text("Manufacturer: $cpuMaker",style=MaterialTheme.typography.bodySmall)
                             Text("${data.optString("cpuThreads","?")} logical threads  ·  ${data.optString("architecture","?")}",
@@ -401,6 +404,29 @@ fun PcWorkspaceScreen(
                                 }
                             }
                         }
+                    }
+                    val physical = data.optJSONArray("diskInventory")
+                    if(physical != null && physical.length() > 0) {
+                        ElevatedCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                                Text("PHYSICAL DRIVES",color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
+                                for(index in 0 until physical.length()) {
+                                    val drive=physical.optJSONObject(index) ?: continue
+                                    val driveType=drive.optString("type","Unknown").ifBlank { "Unknown" }
+                                    val driveSize=readable(drive.optLong("size",-1))
+                                    Text("$driveType · $driveSize",fontWeight=FontWeight.Bold)
+                                    Text(drive.optString("model","Unknown model"),
+                                        style=MaterialTheme.typography.bodyMedium)
+                                    val bus=drive.optString("bus")
+                                    if(bus.isNotBlank()) Text("Bus: $bus",
+                                        style=MaterialTheme.typography.bodySmall)
+                                    if(index < physical.length()-1) HorizontalDivider()
+                                }
+                            }
+                        }
+                    } else {
+                        Text("Physical drive type inventory is loading or unavailable.",
+                            style=MaterialTheme.typography.bodySmall)
                     }
                     ElevatedCard(Modifier.fillMaxWidth()){
                         Column(Modifier.padding(17.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){

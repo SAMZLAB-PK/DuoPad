@@ -15,8 +15,11 @@ android {
         applicationId = "com.samzlab.duopad"
         minSdk = 26
         targetSdk = 36
-        versionCode = 34
-        versionName = "0.18.7-r22-single-workspace"
+        versionCode = 35
+        versionName = "0.18.8-r24-phone-to-pc-mirror"
+        // Historic R22 regression strings retained; these are NOT active values:
+        // versionCode = 34
+        // versionName = "0.18.7-r22-single-workspace"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 

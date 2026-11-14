@@ -13,7 +13,7 @@ assert 'contentDescription = "Original DuoPad D logo"' in s
 assert 'contentDescription = "DuoPad menu"' in s
 assert 'onMore = { dialog = "settings" }' in s
 assert 'onMore = { page = 5 }' in s
-assert 'onAppearanceChange(if (currentlyDark) "light" else "dark")' in s
+assert 'onToggleAppearance' in s and 'Icons.Default.WbSunny' in s
 assert 'versionCode = 34' in g
 assert 'versionName = "0.18.7-r22-single-workspace"' in g
 assert 'DuoPad-Pro-v0.18.7-R22-debug.apk' in w

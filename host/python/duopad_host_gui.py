@@ -19,6 +19,7 @@ from PIL import Image, ImageTk
 import qrcode
 
 from unipoint_host import serve, build_pairing_uri, get_lan_ipv4s
+from pc_workspace import PhoneMirrorFrames
 
 BG = "#F5F6FA"
 WHITE = "#FFFFFF"
@@ -152,6 +153,7 @@ class HostApp:
         bottom.pack(anchor="w",fill="x",pady=(14,0))
         self.button(bottom,"Copy Address",lambda:self.copy(f"{self.ip}:{PORT}")).pack(side="left")
         self.button(bottom,"Regenerate PIN",self.regenerate).pack(side="left",padx=(8,0))
+        self.button(content,"Phone Mirror  ·  Open Viewer",self.open_phone_mirror,True).pack(anchor="w",pady=(14,0))
 
         qr_panel=self.panel(body)
         qr_panel.grid(row=0,column=1,sticky="nsew",pady=(0,14))
@@ -179,6 +181,53 @@ class HostApp:
         self.logbox.pack(fill="both",expand=True,padx=20,pady=(0,15))
         self.log("Host ready. Use Start Host, then connect your phone.")
         self.log("Keep this window open during LAN or VPN remote sessions.")
+
+
+    def open_phone_mirror(self):
+        """Desktop viewer for consented Android-screen frames. Does not capture on its own."""
+        old = getattr(self, "_phone_viewer", None)
+        if old is not None and old.winfo_exists():
+            old.lift()
+            return
+        viewer = tk.Toplevel(self.root)
+        self._phone_viewer = viewer
+        viewer.title("DuoPad Pro · Android Phone Mirror")
+        viewer.geometry("950x670")
+        viewer.minsize(370,300)
+        viewer.configure(bg="#141414")
+        self._phone_image = None
+        self._phone_status = tk.Label(
+            viewer,text="On DuoPad Android: connect PC, then tap Phone → PC Mirror and approve screen sharing.",
+            fg="#FFFFFF",bg="#141414",font=(FONT,11),wraplength=700)
+        self._phone_status.pack(fill="x",padx=18,pady=(9,3))
+        self._phone_canvas = tk.Label(viewer,bg="#141414",fg="#FFFFFF",
+            text="Waiting for your phone to start sharing…",font=(FONT,14))
+        self._phone_canvas.pack(fill="both",expand=True,padx=10,pady=(0,10))
+        self._last_phone_at = 0.0
+        def render():
+            if not viewer.winfo_exists():
+                return
+            jpeg,width,height,seen,source = PhoneMirrorFrames.snapshot()
+            if jpeg and seen > self._last_phone_at:
+                try:
+                    import io
+                    frame=Image.open(io.BytesIO(jpeg))
+                    frame.load()
+                    bounds_w=max(100,self._phone_canvas.winfo_width()-20)
+                    bounds_h=max(100,self._phone_canvas.winfo_height()-20)
+                    frame.thumbnail((bounds_w,bounds_h),Image.Resampling.BILINEAR)
+                    self._phone_image=ImageTk.PhotoImage(frame)
+                    self._phone_canvas.configure(image=self._phone_image,text="")
+                    self._last_phone_at=seen
+                except (OSError,ValueError):
+                    self._phone_status.configure(text="Invalid phone frame discarded.")
+            age = __import__("time").monotonic()-seen
+            self._phone_status.configure(text=(
+                f"● LIVE · {source} · {width}×{height} · Stop from phone notification"
+                if seen>0 and age<4 else "Not streaming · Start Phone → PC Mirror on Android and approve capture"
+            ))
+            viewer.after(120,render)
+        render()
 
     def refresh_qr(self):
         uri=build_pairing_uri(self.ip,PORT,socket.gethostname(),self.pin)

@@ -99,6 +99,30 @@ class PcWorkspaceProtocolTest(unittest.TestCase):
             self.assertFalse(request(self.client, 0x34,
                 {"folder": directory, "name": "../escape.txt", "size": 1})["ok"])
 
+    def test_authenticated_phone_to_pc_mirror_frame(self):
+        # A phone must authenticate before it can publish a frame to the Host viewer.
+        self.authorize()
+        jpeg = bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffda") + b"test" + bytes.fromhex("ffd9")
+        metadata = {"size": len(jpeg), "width": 360, "height": 720, "name": "Android Q5"}
+        host.send_packet(self.client, 0x50, json.dumps(metadata).encode("utf-8"))
+        self.client.sendall(jpeg)
+        answer_header = host.read_exact(self.client, 3)
+        response_type, response_len = struct.unpack("<BH", answer_header)
+        self.assertEqual(response_type, 0x50)
+        result = json.loads(host.read_exact(self.client, response_len))
+        self.assertTrue(result["ok"])
+        image, width, height, seen, name = host.PcWorkspaceService.phone_frames.snapshot()
+        self.assertEqual(image, jpeg)
+        self.assertEqual((width,height), (360,720))
+        self.assertEqual(name, "Android Q5")
+        self.assertGreater(seen,0)
+
+    def test_oversized_phone_frame_is_rejected_before_reading_payload(self):
+        self.authorize()
+        answer = request(self.client, 0x50,
+            {"size": 10000000, "width": 1080, "height": 1920})
+        self.assertFalse(answer["ok"])
+
     def test_preview_missing_dependencies_reports_error_without_crash(self):
         self.authorize()
         result = request(self.client, 0x40, {"width": 640, "quality": 50})

@@ -23,7 +23,7 @@ assert "ramModules" in workspace and "ramModules" in host
 assert "_windows_hardware" in host and "Win32_PhysicalMemory" in host
 assert "GetCursorPos" in host
 assert embedded == host, "Embedded Host must match shipped standalone Host"
-assert 'Color(0xFFD1D5DB)' in theme
+assert 'Color(0xFF161616)' in theme
 assert 'Triple("Green",184,Color(0xFF278B54))' in shell
 assert "onClick={key(176)}" in shell and "onClick={key(178)}" in shell
 assert 'animateFloatAsState' in shell

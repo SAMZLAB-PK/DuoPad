@@ -96,6 +96,8 @@ private fun saveTargets(context:Context,items:List<Target>) {
 @Composable
 private fun DuoPadBrandHeader(
     onMore: () -> Unit,
+    appearance: String,
+    onToggleAppearance: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -133,6 +135,11 @@ private fun DuoPadBrandHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        IconButton(onClick = onToggleAppearance, modifier = Modifier.size(34.dp)) {
+            Icon(if(appearance == "dark") Icons.Default.WbSunny else Icons.Default.DarkMode,
+                if(appearance == "dark") "Light theme" else "Dark theme",
+                tint = Ink, modifier = Modifier.size(22.dp))
         }
         IconButton(onClick = onMore, modifier = Modifier.size(34.dp)) {
             Icon(
@@ -259,6 +266,22 @@ fun DoupadShell(
     }
     fun requireDevice():Boolean { if(!connected){dialog="connect";message("Connect your TV or PC first.")};return connected }
     fun requireTv():Boolean { if(!requireDevice())return false; if(state.mode!=AppMode.ANDROID){message("This tool requires an Android TV connection.");return false};return true }
+    fun startPhoneMirror() {
+        if(!connected || state.mode != AppMode.PC) {
+            message("Connect your Windows PC Host before starting phone mirroring.")
+            return
+        }
+        val endpoint=status.address.orEmpty()
+        val host=endpoint.substringBefore(':')
+        val pcPort=endpoint.substringAfter(':',"27845").toIntOrNull() ?: 27845
+        if(host.isBlank()) { message("PC address is unavailable"); return }
+        val trustedPin=TrustedPcPairing.read(context,endpoint) ?: pin
+        runCatching {
+            context.startActivity(Intent(context,PhoneMirrorActivity::class.java)
+                .putExtra("host",host).putExtra("port",pcPort).putExtra("pin",trustedPin))
+        }.onFailure { message("Phone mirror could not start: ${it.message}") }
+    }
+
     fun openPcTool(tab:String) {
         if (!connected || state.mode != AppMode.PC) {
             message("PC is disconnected. Select your saved PC on the Devices page to reconnect.")
@@ -528,6 +551,8 @@ fun DoupadShell(
                 0->{
                     DuoPadBrandHeader(
                         onMore = { page = 5 },
+                        appearance = appearance,
+                        onToggleAppearance = { onAppearanceChange(if(appearance=="dark")"light" else "dark") },
                         modifier = Modifier.padding(top = 8.dp, bottom = 3.dp)
                     )
 
@@ -685,28 +710,10 @@ fun DoupadShell(
                 4->{
                     DuoPadBrandHeader(
                         onMore = { dialog = "settings" },
+                        appearance = appearance,
+                        onToggleAppearance = { onAppearanceChange(if(appearance=="dark")"light" else "dark") },
                         modifier = Modifier.padding(top = 2.dp, bottom = 2.dp)
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        val currentlyDark = appearance == "dark"
-                        FilledTonalButton(
-                            onClick = { onAppearanceChange(if (currentlyDark) "light" else "dark") },
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 7.dp),
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            Icon(
-                                if (currentlyDark) Icons.Default.WbSunny else Icons.Default.DarkMode,
-                                if (currentlyDark) "Switch to light theme" else "Switch to dark theme",
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (currentlyDark) "Light" else "Dark", fontSize = 12.sp)
-                        }
-                    }
                     Text("Last connected",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink)
                     val lastConnected=targets.firstOrNull()
                     if(lastConnected!=null){
@@ -869,6 +876,11 @@ fun DoupadShell(
                             }.onFailure{message("Voice recognition unavailable")}
                         },modifier=Modifier.size(38.dp)){
                             Icon(Icons.Default.Mic,"Voice",tint=Teal)
+                        }
+                        IconButton(onClick={onAppearanceChange(if(appearance=="dark")"light" else "dark")},
+                            modifier=Modifier.size(38.dp)){
+                            Icon(if(appearance=="dark")Icons.Default.WbSunny else Icons.Default.DarkMode,
+                                "Toggle light or dark theme")
                         }
                         IconButton(onClick={dialog="settings"},modifier=Modifier.size(38.dp)){
                             Icon(Icons.Default.MoreVert,"Options")
@@ -1168,6 +1180,9 @@ fun DoupadShell(
                             Text(if(connected)"CONNECTED" else "DISCONNECTED",fontSize=11.sp,
                                 fontWeight=FontWeight.SemiBold,color=Muted)
                         }
+                        IconButton(onClick={onAppearanceChange(if(appearance=="dark")"light" else "dark")}){
+                            Icon(if(appearance=="dark")Icons.Default.WbSunny else Icons.Default.DarkMode,"Toggle theme")
+                        }
                         IconButton(onClick={dialog="settings"}){Icon(Icons.Default.MoreVert,"Device options")}
                     }
                     if(state.mode==AppMode.PC) {
@@ -1188,7 +1203,13 @@ fun DoupadShell(
                                 openPcTool("Keyboard")
                             }
                         }
-                        OutlinedButton(onClick={openPcTool("Software")},modifier=Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick={startPhoneMirror()},modifier=Modifier.fillMaxWidth()) {
+                             Icon(Icons.Default.ScreenShare,null,Modifier.size(19.dp))
+                             Spacer(Modifier.width(9.dp))
+                             Text("Phone → PC Mirror",fontWeight=FontWeight.SemiBold)
+                             Spacer(Modifier.weight(1f));Icon(Icons.Default.ChevronRight,null,Modifier.size(17.dp))
+                         }
+                         OutlinedButton(onClick={openPcTool("Software")},modifier=Modifier.fillMaxWidth()) {
                              Icon(Icons.Default.Apps,null,Modifier.size(19.dp))
                              Spacer(Modifier.width(9.dp));Text("Installed software",fontWeight=FontWeight.SemiBold)
                              Spacer(Modifier.weight(1f));Icon(Icons.Default.ChevronRight,null,Modifier.size(17.dp))
@@ -1308,7 +1329,7 @@ fun DoupadShell(
             }
         }
     }
-    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Pale,title={Text(when(dialog){"connect"->"Add a device";"saveDevice"->"Save connected device?";"connectingSaved"->"Connecting to device";"rename"->"Rename device";"keyboard"->"Keyboard";"settings"->"DuoPad Pro";"clearSaved"->"Clear saved devices?";"clearLogs"->"Clear old diagnostic logs?";"clearCache"->"Clear app caches?";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
+    if(dialog!=null) AlertDialog(onDismissRequest={dialog=null},containerColor=Pale,title={Text(when(dialog){"connect"->"Add a device";"pcSetup"->"Install DuoPad PC Companion";"saveDevice"->"Save connected device?";"connectingSaved"->"Connecting to device";"rename"->"Rename device";"keyboard"->"Keyboard";"settings"->"DuoPad Pro";"clearSaved"->"Clear saved devices?";"clearLogs"->"Clear old diagnostic logs?";"clearCache"->"Clear app caches?";"scan"->"Nearby devices";"shell"->"Shell";"power"->"Power options";"gamepad"->"Gamepad";else->dialog!!},fontWeight=FontWeight.Bold)},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
             when(dialog){
                 "clearSaved"->{
@@ -1337,11 +1358,30 @@ fun DoupadShell(
                         Text("Tap Retry or Close.",fontSize=11.sp,color=Muted)
                     }
                 }
+                "pcSetup"->{
+                    Text("Install DuoPad PC Host on Windows before connecting over Wi-Fi.",
+                        fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                    Text("1. Send Companion ZIP to your PC.\n2. Extract and run START-DUOPAD-PC-HOST.bat.\n3. Allow the private-network firewall prompt.\n4. Return here and scan for your PC.",
+                        fontSize=12.sp,color=Muted)
+                    Button(onClick={
+                        runCatching { DuoPadHostShare.share(context) }
+                            .onFailure { message("Companion sharing failed: ${it.message}") }
+                    },modifier=Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Share,null,Modifier.size(19.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Send PC Companion")
+                    }
+                    Text("Windows installation requires your approval. DuoPad cannot install it silently.",
+                        color=Muted,fontSize=11.sp)
+                }
                 "connect"->{
                     Row{
                         FilterChip(selected=!pc,onClick={pc=false;port="5555"},label={Text("Android TV")})
                         Spacer(Modifier.width(8.dp))
-                        FilterChip(selected=pc,onClick={pc=true;port="27845"},label={Text("PC")})
+                        FilterChip(selected=pc,onClick={
+                            pc=true;port="27845";pcTransport="wifi"
+                            if(state.pcDevices.none { it.isReachable }) dialog="pcSetup"
+                        },label={Text("PC")})
                     }
                     if(!pc) {
                         OutlinedTextField(ip,{ip=it},label={Text("IP address")},singleLine=true)
@@ -1511,6 +1551,7 @@ fun DoupadShell(
         }
     },confirmButton={TextButton(enabled=!(connectRequested && status.state==ConnectionState.CONNECTING),onClick={
         when(dialog){
+            "pcSetup"->{pc=true;pcTransport="wifi";dialog="connect";vm.scanPc()}
             "clearSaved"->{targets=emptyList();TrustedPcPairing.forgetAll(context);saveTargets(context,targets);dialog=null}
             "clearLogs"->{MirrorCrashRecorder.clear(context);com.unipoint.core.util.PcDiagnosticRecorder.clear(context);dialog=null;message("Diagnostic logs cleared") }
             "saveDevice"->{
@@ -1560,7 +1601,7 @@ fun DoupadShell(
             "clearCache"->{showCommand("Clear cache","pm trim-caches 1G")}
             else->dialog=null
         }
-    }){Text(when(dialog){"rename"->"Save";"saveDevice"->"Save device";"clearLogs"->"Clear";"clearSaved"->"Clear";"clearCache"->"Confirm";"connectingSaved"->if(status.state==ConnectionState.CONNECTING)"Connecting…" else "Retry";"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else if(connectRequested&&status.state==ConnectionState.ERROR)"Retry" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
+    }){Text(when(dialog){"rename"->"Save";"saveDevice"->"Save device";"clearLogs"->"Clear";"clearSaved"->"Clear";"pcSetup"->"I've installed · Search";"clearCache"->"Confirm";"connectingSaved"->if(status.state==ConnectionState.CONNECTING)"Connecting…" else "Retry";"connect"->if(pc&&pcTransport=="bluetooth")"Start Bluetooth" else if(connectRequested&&status.state==ConnectionState.ERROR)"Retry" else "Connect";"keyboard"->"Send";"Confirm power action"->"Confirm";else->"Done"},color=Teal)}},dismissButton={TextButton(onClick={dialog=null}){Text("Close",color=Muted)}})
 }
 
 @Composable private fun ConceptAction(

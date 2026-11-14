@@ -16,8 +16,8 @@ assert 'automaticReconnect' in shell and 'SAVED_DEVICE_RECONNECT' in shell
 assert 'reconnectAttempts < 3' in shell
 assert 'saveTargets(context,targets)' in shell
 assert 'val previous=targets.firstOrNull' in shell
-assert 'TextButton(onClick={onAppearanceChange("bento")})' in shell
-assert 'val currentlyDark = appearance == "dark"' in shell
+assert 'onToggleAppearance' in shell
+assert 'Icons.Default.WbSunny' in shell and 'Icons.Default.DarkMode' in shell
 assert 'appearancePrefs.edit().putString("appearance"' in main
 assert 'HandmadeLight' in theme and 'GraphiteDark' in theme and 'BentoClayLight' in theme
 assert (java/'presentation/ui/theme/Color.kt').exists()
