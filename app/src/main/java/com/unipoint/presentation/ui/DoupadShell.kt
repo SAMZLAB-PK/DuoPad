@@ -96,6 +96,8 @@ private fun saveTargets(context:Context,items:List<Target>) {
 @Composable
 private fun DuoPadBrandHeader(
     onMore: () -> Unit,
+    appearance: String,
+    onToggleAppearance: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -133,6 +135,11 @@ private fun DuoPadBrandHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        IconButton(onClick = onToggleAppearance, modifier = Modifier.size(34.dp)) {
+            Icon(if(appearance == "dark") Icons.Default.WbSunny else Icons.Default.DarkMode,
+                if(appearance == "dark") "Light theme" else "Dark theme",
+                tint = Ink, modifier = Modifier.size(22.dp))
         }
         IconButton(onClick = onMore, modifier = Modifier.size(34.dp)) {
             Icon(
@@ -528,6 +535,8 @@ fun DoupadShell(
                 0->{
                     DuoPadBrandHeader(
                         onMore = { page = 5 },
+                        appearance = appearance,
+                        onToggleAppearance = { onAppearanceChange(if(appearance=="dark")"light" else "dark") },
                         modifier = Modifier.padding(top = 8.dp, bottom = 3.dp)
                     )
 
@@ -685,28 +694,10 @@ fun DoupadShell(
                 4->{
                     DuoPadBrandHeader(
                         onMore = { dialog = "settings" },
+                        appearance = appearance,
+                        onToggleAppearance = { onAppearanceChange(if(appearance=="dark")"light" else "dark") },
                         modifier = Modifier.padding(top = 2.dp, bottom = 2.dp)
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        val currentlyDark = appearance == "dark"
-                        FilledTonalButton(
-                            onClick = { onAppearanceChange(if (currentlyDark) "light" else "dark") },
-                            shape = RoundedCornerShape(18.dp),
-                            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 7.dp),
-                            modifier = Modifier.height(36.dp)
-                        ) {
-                            Icon(
-                                if (currentlyDark) Icons.Default.WbSunny else Icons.Default.DarkMode,
-                                if (currentlyDark) "Switch to light theme" else "Switch to dark theme",
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (currentlyDark) "Light" else "Dark", fontSize = 12.sp)
-                        }
-                    }
                     Text("Last connected",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Ink)
                     val lastConnected=targets.firstOrNull()
                     if(lastConnected!=null){
@@ -869,6 +860,11 @@ fun DoupadShell(
                             }.onFailure{message("Voice recognition unavailable")}
                         },modifier=Modifier.size(38.dp)){
                             Icon(Icons.Default.Mic,"Voice",tint=Teal)
+                        }
+                        IconButton(onClick={onAppearanceChange(if(appearance=="dark")"light" else "dark")},
+                            modifier=Modifier.size(38.dp)){
+                            Icon(if(appearance=="dark")Icons.Default.WbSunny else Icons.Default.DarkMode,
+                                "Toggle light or dark theme")
                         }
                         IconButton(onClick={dialog="settings"},modifier=Modifier.size(38.dp)){
                             Icon(Icons.Default.MoreVert,"Options")
@@ -1167,6 +1163,9 @@ fun DoupadShell(
                                 fontWeight=FontWeight.Bold,fontSize=18.sp,color=Ink,maxLines=1)
                             Text(if(connected)"CONNECTED" else "DISCONNECTED",fontSize=11.sp,
                                 fontWeight=FontWeight.SemiBold,color=Muted)
+                        }
+                        IconButton(onClick={onAppearanceChange(if(appearance=="dark")"light" else "dark")}){
+                            Icon(if(appearance=="dark")Icons.Default.WbSunny else Icons.Default.DarkMode,"Toggle theme")
                         }
                         IconButton(onClick={dialog="settings"}){Icon(Icons.Default.MoreVert,"Device options")}
                     }
