@@ -23,14 +23,76 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-pc-companion:
+    name: Build embedded Windows PC Companion EXE
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Host dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r host/python/requirements.txt pyinstaller
+      - name: Verify Host protocol and screen stream
+        shell: pwsh
+        run: python -m unittest discover -s host/python/tests -v
+      - name: Compile Windows Companion EXE
+        shell: pwsh
+        run: |
+          python -c "from PIL import Image; Image.open('app/src/main/res/drawable-nodpi/duopad_original_logo.png').convert('RGBA').save('host-logo.ico',format='ICO',sizes=[(16,16),(32,32),(48,48),(64,64),(96,96)])"
+          python -m PyInstaller --noconfirm --clean --onefile --windowed `
+            --name DuoPad-PC-Host-Pro --paths host/python `
+            --add-data "app/src/main/res/drawable-nodpi/duopad_original_logo.png;." `
+            --icon host-logo.ico --hidden-import pc_workspace `
+            host/python/duopad_host_gui.py
+      - name: Package standalone EXE for app embedding and download
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/companion | Out-Null
+          Copy-Item dist/DuoPad-PC-Host-Pro.exe dist/companion/
+          Copy-Item host/windows/SETUP-FIREWALL-ONCE.bat dist/companion/
+          Copy-Item host/WINDOWS-SETUP.md dist/companion/README.md
+          @'
+          @echo off
+          title DuoPad PC Host Companion
+          netsh advfirewall firewall show rule name="DuoPad PC Host TCP 27845" >nul 2>&1
+          if %errorlevel% neq 0 call "%~dp0SETUP-FIREWALL-ONCE.bat"
+          "%~dp0DuoPad-PC-Host-Pro.exe"
+          pause
+          '@ | Set-Content -Path dist/companion/START-DUOPAD-PC-HOST.bat -Encoding ascii
+          Compress-Archive -Path dist/companion/* -DestinationPath DuoPad-PC-Companion-R24.zip -Force
+      - name: Upload compiled Windows Companion EXE bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: DuoPad-PC-Companion-R24
+          path: DuoPad-PC-Companion-R24.zip
+          if-no-files-found: error
+          retention-days: 14
+
   build-debug-apk:
     name: Test and build debug APK
+    needs: build-pc-companion
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Embed the real Windows EXE bundle into the Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: DuoPad-PC-Companion-R24
+          path: app/src/main/assets/pc-host/
+
+      - name: Verify embedded EXE archive
+        shell: bash
+        run: |
+          test -s app/src/main/assets/pc-host/DuoPad-PC-Companion-R24.zip
+          unzip -l app/src/main/assets/pc-host/DuoPad-PC-Companion-R24.zip | grep 'DuoPad-PC-Host-Pro.exe'
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -106,15 +168,15 @@ jobs:
           mkdir -p dist
           APK='app/build/outputs/apk/debug/app-debug.apk'
           test -f "$APK"
-          cp "$APK" 'dist/DuoPad-Pro-v0.18.7-R22-debug.apk'
-          sha256sum 'dist/DuoPad-Pro-v0.18.7-R22-debug.apk' | tee 'dist/SHA256SUMS.txt'
+          cp "$APK" 'dist/DuoPad-Pro-R24-with-PC-Companion-debug.apk'
+          sha256sum 'dist/DuoPad-Pro-R24-with-PC-Companion-debug.apk' | tee 'dist/SHA256SUMS.txt'
 
       - name: Upload DOUPAD APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DuoPad-Pro-v0.18.7-R22-debug
+          name: DuoPad-Pro-R24-with-PC-Companion-debug
           path: |
-            dist/DuoPad-Pro-v0.18.7-R22-debug.apk
+            dist/DuoPad-Pro-R24-with-PC-Companion-debug.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
