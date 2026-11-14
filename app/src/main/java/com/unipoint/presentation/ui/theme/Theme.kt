@@ -42,22 +42,22 @@ object DuoColors {
 
 // Warm handmade Light is the screenshot reference. Midnight is the preserved dark
 // theme, and Bento Clay uses the exact swatches from the supplied theme ZIP.
+// Pure monochrome Light mode: no cream, orange, blue, or green accents.
 private val HandmadeLight = lightColorScheme(
-    // Light appearance uses a calm light-grey accent; dark/bento stay unchanged.
-    primary=Color(0xFFD1D5DB),onPrimary=Color(0xFF252A30),
-    primaryContainer=Color(0xFFE9EBEE),onPrimaryContainer=Color(0xFF39434D),
-    secondary=Color(0xFF50704B),onSecondary=Color.White,
-    secondaryContainer=Color(0xFFE0EAD9),onSecondaryContainer=Color(0xFF29402B),
-    tertiary=Color(0xFF9A8062),onTertiary=Color.White,
-    background=Color(0xFFF7F2E9),onBackground=Color(0xFF29241F),
-    surface=Color(0xFFFFFCF7),onSurface=Color(0xFF29241F),
-    surfaceVariant=Color(0xFFF0E9DE),onSurfaceVariant=Color(0xFF786E61),
-    outline=Color(0xFF928575),outlineVariant=Color(0xFFDCD1C2),
-    surfaceContainerLowest=Color(0xFFFFFCF7),surfaceContainerLow=Color(0xFFF7F0E5),
-    surfaceContainer=Color(0xFFF2EADD),surfaceContainerHigh=Color(0xFFEBE1D3),
-    surfaceContainerHighest=Color(0xFFE4D8C8),
-    error=Color(0xFFB5342C),onError=Color.White,
-    errorContainer=Color(0xFFFBE1DE),onErrorContainer=Color(0xFF731D19)
+    primary=Color(0xFF161616),onPrimary=Color.White,
+    primaryContainer=Color(0xFFEDEDED),onPrimaryContainer=Color(0xFF161616),
+    secondary=Color(0xFF404040),onSecondary=Color.White,
+    secondaryContainer=Color(0xFFF1F1F1),onSecondaryContainer=Color(0xFF202020),
+    tertiary=Color(0xFF616161),onTertiary=Color.White,
+    background=Color.White,onBackground=Color(0xFF101010),
+    surface=Color.White,onSurface=Color(0xFF101010),
+    surfaceVariant=Color(0xFFF4F4F4),onSurfaceVariant=Color(0xFF5D5D5D),
+    outline=Color(0xFF929292),outlineVariant=Color(0xFFDFDFDF),
+    surfaceContainerLowest=Color.White,surfaceContainerLow=Color(0xFFFAFAFA),
+    surfaceContainer=Color(0xFFF5F5F5),surfaceContainerHigh=Color(0xFFEEEEEE),
+    surfaceContainerHighest=Color(0xFFE7E7E7),
+    error=Color(0xFF353535),onError=Color.White,
+    errorContainer=Color(0xFFE8E8E8),onErrorContainer=Color(0xFF222222)
 )
 private val GraphiteDark = darkColorScheme(
     primary=Color(0xFF8AA4FF),onPrimary=Color(0xFF0B1230),
