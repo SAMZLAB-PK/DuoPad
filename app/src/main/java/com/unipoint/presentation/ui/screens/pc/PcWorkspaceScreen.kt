@@ -63,7 +63,7 @@ fun PcWorkspaceScreen(
     val client = remember(host, port, pin) { PcWorkspaceClient(context.applicationContext, host, port, pin) }
     DisposableEffect(client) { onDispose { client.close() } }
     var tab by rememberSaveable(initialTab) {
-        mutableStateOf(initialTab.takeIf { it in listOf("Screen", "Files", "Info") } ?: "Info")
+        mutableStateOf(initialTab.takeIf { it in listOf("Screen", "Files", "Info", "Software") } ?: "Info")
     }
     var pointerMode by rememberSaveable { mutableStateOf("On PC screen") }
     val activity = context as? Activity
@@ -162,7 +162,7 @@ fun PcWorkspaceScreen(
                         message = "PC folder loaded"
                     }
                 }
-                "Info" -> {
+                "Info", "Software" -> {
                     info = null
                     info = client.information()
                     message = "System information updated"
@@ -204,6 +204,7 @@ fun PcWorkspaceScreen(
                 Text(when(tab) {
                     "Files" -> "PC drives & files"
                     "Info" -> "System information"
+                    "Software" -> "Installed software"
                     else -> "PC Screen"
                 }, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                 Text("$host:$port", style = MaterialTheme.typography.bodySmall)
@@ -293,6 +294,38 @@ fun PcWorkspaceScreen(
                     }
                 }
             }
+            "Software" -> {
+                val apps = info?.optJSONArray("installedSoftware")
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
+                    verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Text("Installed software", style=MaterialTheme.typography.headlineSmall,
+                        fontWeight=FontWeight.Bold)
+                    Text("Read-only Windows uninstall-registry inventory. Portable and Store apps may not appear.",
+                        color=MaterialTheme.colorScheme.onSurfaceVariant,style=MaterialTheme.typography.bodySmall)
+                    when {
+                        info == null && lastError == null -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                        apps == null -> Text("Update DuoPad PC Host to view installed software.")
+                        apps.length() == 0 -> Text("No registered desktop software found.")
+                        else -> {
+                            Text("${apps.length()} registered entries", style=MaterialTheme.typography.labelMedium)
+                            for (index in 0 until apps.length()) {
+                                val app = apps.optJSONObject(index) ?: continue
+                                ElevatedCard(Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(horizontal=14.dp,vertical=11.dp)) {
+                                        Text(app.optString("name","Unknown application"),
+                                            fontWeight=FontWeight.SemiBold,maxLines=2)
+                                        val detail = listOf(app.optString("version"),app.optString("publisher"))
+                                            .filter { it.isNotBlank() }.joinToString(" · ")
+                                        if(detail.isNotBlank()) Text(detail,
+                                            style=MaterialTheme.typography.bodySmall,
+                                            color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             "Info" -> {
                 val data=info
                 if(data==null) {
@@ -332,9 +365,32 @@ fun PcWorkspaceScreen(
                             Text(data.optString("os","Unknown Windows"),style=MaterialTheme.typography.bodyMedium)
                             HorizontalDivider()
                             Text("PROCESSOR",color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
-                            Text(data.optString("cpu","Unknown processor"),style=MaterialTheme.typography.bodyMedium)
+                            Text(data.optString("cpuModel",data.optString("cpu","Unknown processor")),
+                                style=MaterialTheme.typography.bodyMedium,fontWeight=FontWeight.SemiBold)
+                            val cpuMaker = data.optString("cpuManufacturer")
+                            if(cpuMaker.isNotBlank()) Text("Manufacturer: $cpuMaker",style=MaterialTheme.typography.bodySmall)
                             Text("${data.optString("cpuThreads","?")} logical threads  ·  ${data.optString("architecture","?")}",
                                 style=MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    val modules = data.optJSONArray("ramModules")
+                    if(modules != null && modules.length() > 0) {
+                        ElevatedCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(17.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                Text("PHYSICAL RAM MODULES",color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
+                                for(index in 0 until modules.length()) {
+                                    val module = modules.optJSONObject(index) ?: continue
+                                    val capacity = module.optLong("Capacity",-1)
+                                    val brand = module.optString("Manufacturer","Unknown brand").ifBlank { "Unknown brand" }
+                                    val part = module.optString("PartNumber").trim()
+                                    Text("$brand · ${readable(capacity)}",fontWeight=FontWeight.SemiBold)
+                                    Text(listOf(module.optString("DeviceLocator"),part,
+                                            module.optString("Speed").takeIf { it.isNotBlank() }?.let { "$it MHz" }.orEmpty())
+                                            .filter { it.isNotBlank() }.joinToString(" · "),
+                                        style=MaterialTheme.typography.bodySmall)
+                                    if(index < modules.length()-1) HorizontalDivider()
+                                }
+                            }
                         }
                     }
                     ElevatedCard(Modifier.fillMaxWidth()){
