@@ -100,7 +100,6 @@ class PcWorkspaceProtocolTest(unittest.TestCase):
                 {"folder": directory, "name": "../escape.txt", "size": 1})["ok"])
 
     def test_authenticated_phone_to_pc_mirror_frame(self):
-        from pc_workspace import PhoneMirrorFrames
         # A phone must authenticate before it can publish a frame to the Host viewer.
         self.authorize()
         jpeg = bytes.fromhex("ffd8ffe000104a46494600010100000100010000ffda") + b"test" + bytes.fromhex("ffd9")
@@ -112,7 +111,7 @@ class PcWorkspaceProtocolTest(unittest.TestCase):
         self.assertEqual(response_type, 0x50)
         result = json.loads(host.read_exact(self.client, response_len))
         self.assertTrue(result["ok"])
-        image, width, height, seen, name = PhoneMirrorFrames.snapshot()
+        image, width, height, seen, name = host.PcWorkspaceService.phone_frames.snapshot()
         self.assertEqual(image, jpeg)
         self.assertEqual((width,height), (360,720))
         self.assertEqual(name, "Android Q5")
