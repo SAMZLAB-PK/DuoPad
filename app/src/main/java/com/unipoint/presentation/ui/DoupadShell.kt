@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.unipoint.R
@@ -1610,6 +1612,7 @@ fun DoupadShell(
     }
 }
 @Composable private fun VolumeKnob(onUp:()->Unit,onDown:()->Unit,onMute:()->Unit){
+    val haptics = LocalHapticFeedback.current
     var rotation by remember { mutableFloatStateOf(0f) }
     val turn by animateFloatAsState(rotation,animationSpec=spring(stiffness=Spring.StiffnessLow),label="volume-knob")
     Column(horizontalAlignment=Alignment.CenterHorizontally){
@@ -1619,7 +1622,7 @@ fun DoupadShell(
                 contentAlignment=Alignment.TopCenter) {
                 Box(Modifier.padding(top=1.dp).size(9.dp).background(Teal,CircleShape))
             }
-            Surface(onClick={rotation+=12f;onMute()},modifier=Modifier.size(65.dp),shape=CircleShape,
+            Surface(onClick={rotation+=12f;haptics.performHapticFeedback(HapticFeedbackType.LongPress);onMute()},modifier=Modifier.size(65.dp),shape=CircleShape,
                 color=Paper,border=BorderStroke(2.dp,Teal)){
                 Column(horizontalAlignment=Alignment.CenterHorizontally,
                     verticalArrangement=Arrangement.Center){
@@ -1636,11 +1639,11 @@ fun DoupadShell(
             }
         }
         Row(verticalAlignment=Alignment.CenterVertically){
-            IconButton(onClick={rotation-=28f;onDown()},modifier=Modifier.size(34.dp)){
+            IconButton(onClick={rotation-=28f;haptics.performHapticFeedback(HapticFeedbackType.LongPress);onDown()},modifier=Modifier.size(34.dp)){
                 Icon(Icons.Default.Remove,"Volume down")
             }
             Text("Volume",fontSize=10.sp,color=Muted)
-            IconButton(onClick={rotation+=28f;onUp()},modifier=Modifier.size(34.dp)){
+            IconButton(onClick={rotation+=28f;haptics.performHapticFeedback(HapticFeedbackType.LongPress);onUp()},modifier=Modifier.size(34.dp)){
                 Icon(Icons.Default.Add,"Volume up")
             }
         }
