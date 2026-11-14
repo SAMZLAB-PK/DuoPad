@@ -154,6 +154,7 @@ jobs:
           python3 verification/test_duopad_r21_host_fullscreen_crash.py
           python3 verification/test_duopad_r22_single_dashboard.py
           python3 verification/test_duopad_r23_discovery_inventory_remote.py
+          python3 verification/test_duopad_r24_phone_mirror_mono_companion.py
           python3 -m unittest discover -s host/python/tests -v
 
       - name: Run unit tests
