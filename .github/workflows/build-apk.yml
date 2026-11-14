@@ -162,6 +162,7 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
+      # DuoPad-Pro-v0.18.7-R22-debug.apk was the legacy R22 artifact.
       - name: Collect APK
         shell: bash
         run: |
