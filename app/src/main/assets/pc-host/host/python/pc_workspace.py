@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
 import socket
 import struct
 import sys
@@ -46,8 +47,7 @@ def _windows_drives():
     return [f"{chr(65+i)}:\\" for i in range(26) if bitmask & (1 << i)]
 
 
-@lru_cache(maxsize=1)
-def _windows_hardware():
+def _read_windows_hardware_slow():
     """Read-only WMI/CIM inventory, cached to avoid restarting PowerShell per request."""
     if not sys.platform.startswith("win"):
         return {"cpuManufacturer": "", "cpuModel": "", "ramModules": []}
@@ -61,13 +61,51 @@ def _windows_hardware():
     try:
         process = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            capture_output=True, text=True, timeout=8,
+            capture_output=True, text=True, timeout=15,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
         )
         result = json.loads(process.stdout) if process.returncode == 0 else {}
         return result if isinstance(result, dict) else {}
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return {}
+
+
+
+# CIM can spend seconds starting PowerShell on a cold Windows session.
+# Never hold a control protocol reply hostage to that process.
+_hardware_worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="DuoPadHardware")
+_hardware_future = None
+
+
+def _windows_hardware():
+    global _hardware_future
+    fallback = {"cpuManufacturer": "", "cpuModel": platform.processor() or "", "ramModules": []}
+    if not sys.platform.startswith("win"):
+        return fallback
+    # Windows registry CPU identification is fast and available even while CIM warms up.
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
+            for source, target in (("ProcessorNameString", "cpuModel"),
+                                   ("VendorIdentifier", "cpuManufacturer")):
+                try:
+                    fallback[target] = str(winreg.QueryValueEx(key, source)[0]).strip()
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    if _hardware_future is None:
+        _hardware_future = _hardware_worker.submit(_read_windows_hardware_slow)
+    if _hardware_future.done():
+        try:
+            detailed = _hardware_future.result()
+            if isinstance(detailed, dict):
+                fallback.update({key: value for key, value in detailed.items()
+                                 if value is not None and value != ""})
+        except Exception:
+            pass
+    return fallback
 
 
 @lru_cache(maxsize=1)
