@@ -1357,56 +1357,54 @@ fun DoupadShell(
                                 LinearProgressIndicator(Modifier.fillMaxWidth())
                                 Text("Looking for DuoPad Pro Host on your network…",fontSize=12.sp,color=Muted)
                             }
-                            state.pcDevices.take(6).forEach { host ->
+                            state.pcDevices.filter { it.isReachable }.take(4).forEach { host ->
                                 OutlinedButton(onClick={
                                     val h=host.address.substringBefore(':')
                                     val p=host.address.substringAfter(':',"27845").toIntOrNull()?:27845
                                     ip=h;port=p.toString()
-                                    if(host.requiresPin) pin="" else { vm.connectNetwork(h,p,null);dialog=null }
+                                    if(host.requiresPin) { pin="";showManualPc=true } else {
+                                        vm.connectNetwork(h,p,null,onSuccess={dialog=null;page=3;detail=null})
+                                    }
                                 },modifier=Modifier.fillMaxWidth()) {
                                     Icon(Icons.Default.Computer,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp))
                                     Column(Modifier.weight(1f)) { Text(host.name,maxLines=1);Text(host.address+if(host.isReachable)" · Online" else " · Saved",fontSize=11.sp,color=Muted) }
                                 }
                             }
                             if(!state.isScanningPc && state.pcDevices.none { it.isReachable }) {
-                                Surface(shape=RoundedCornerShape(14.dp),color=Pale,border=BorderStroke(1.dp,Border)) {
-                                    Column(Modifier.fillMaxWidth().padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        Text("DuoPad Pro Host required for Wi-Fi",fontWeight=FontWeight.Bold)
-                                        Text("Bluetooth Direct works without any PC software. For Wi-Fi control, run the small DuoPad Pro Host on Windows, macOS or Linux.",fontSize=12.sp,color=Muted)
-                                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                            OutlinedButton(onClick={vm.scanPc()},enabled=!state.isScanningPc,modifier=Modifier.weight(1f)){
-                                                Text(if(state.hasScannedPc) "Search Again" else "Search PC")
-                                            }
-                                            Button(onClick={
-                                                runCatching { DuoPadHostShare.share(context) }
-                                                    .onFailure { message("Could not share the Windows Host package: ${it.message}") }
-                                            },modifier=Modifier.weight(1f),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("Get Host")}
-                                        }
-                                        TextButton(onClick={scanPcQr()},modifier=Modifier.fillMaxWidth()) {
-                                            Icon(Icons.Default.QrCodeScanner,null,Modifier.size(18.dp))
-                                            Spacer(Modifier.width(7.dp)); Text("Scan Host QR Code")
-                                        }
-                                        TextButton(onClick={pcTransport="bluetooth"},modifier=Modifier.fillMaxWidth()){Text("Use Bluetooth Direct instead")}
-                                    }
+                                Text("No PC Host detected. Start DuoPad Host on your PC and allow TCP 27845 / UDP 27846 in the local firewall.",
+                                    fontSize=11.sp,color=Muted)
+                            }
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                                OutlinedButton(onClick={vm.scanPc()},enabled=!state.isScanningPc,modifier=Modifier.weight(1f),
+                                    contentPadding=PaddingValues(horizontal=5.dp)) {
+                                    Icon(Icons.Default.Refresh,null,Modifier.size(15.dp));Text("Scan",fontSize=11.sp)
+                                }
+                                OutlinedButton(onClick={scanPcQr()},modifier=Modifier.weight(1f),
+                                    contentPadding=PaddingValues(horizontal=5.dp)) {
+                                    Icon(Icons.Default.QrCodeScanner,null,Modifier.size(15.dp));Text("QR",fontSize=11.sp)
+                                }
+                                OutlinedButton(onClick={
+                                    runCatching { DuoPadHostShare.share(context) }
+                                        .onFailure { message("Could not share Host: ${it.message}") }
+                                },modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=5.dp)) {
+                                    Icon(Icons.Default.Computer,null,Modifier.size(15.dp));Text("Get Host",fontSize=11.sp)
                                 }
                             }
-                            Text("Manual Wi-Fi connection",fontWeight=FontWeight.SemiBold)
-                            OutlinedTextField(ip,{ip=it},label={Text("PC IP address")},singleLine=true)
-                            OutlinedTextField(port,{port=it.filter(Char::isDigit)},label={Text("Port")},singleLine=true)
-                            OutlinedTextField(pin,{pin=it},label={Text("Host pairing PIN (optional)")},singleLine=true)
-                            OutlinedButton(onClick={scanPcQr()},modifier=Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.QrCodeScanner,null,Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp)); Text("Connect by QR Code")
+                            TextButton(onClick={showManualPc=!showManualPc},modifier=Modifier.fillMaxWidth()) {
+                                Icon(if(showManualPc)Icons.Default.ExpandLess else Icons.Default.Edit,null,Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if(showManualPc)"Hide manual connection" else "Enter PC address manually",fontSize=12.sp)
                             }
-                            OutlinedButton(onClick={
-                                runCatching { DuoPadHostShare.share(context) }
-                                    .onFailure { message("Windows Host share failed: ${it.message}") }
-                            },modifier=Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.Share,null,Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp)); Text("Send Windows Host to PC · Bluetooth / Quick Share")
+                            if(showManualPc) {
+                                OutlinedTextField(ip,{ip=it},label={Text("PC IP or Tailscale address")},
+                                    singleLine=true,modifier=Modifier.fillMaxWidth())
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                    OutlinedTextField(port,{port=it.filter(Char::isDigit)},label={Text("Port")},
+                                        singleLine=true,modifier=Modifier.weight(.42f))
+                                    OutlinedTextField(pin,{pin=it.trim().take(24)},label={Text("Host PIN")},
+                                        singleLine=true,modifier=Modifier.weight(.58f))
+                                }
                             }
-                            Text("On Windows, accept the ZIP, extract it and run Run-DOUPAD-Host.bat. User approval is required; automatic installation is not supported.",
-                                fontSize=11.sp,color=Muted)
                         }
                     }
                     if(localError.isNotBlank())Text(localError,color=MaterialTheme.colorScheme.error)
