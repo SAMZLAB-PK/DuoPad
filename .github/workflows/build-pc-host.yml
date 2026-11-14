@@ -2,6 +2,10 @@ name: Build DuoPad Windows PC Host
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'host/**'
+      - '.github/workflows/build-pc-host.yml'
   push:
     branches:
       - 'release/**'
@@ -66,7 +70,7 @@ jobs:
           Get-FileHash dist/package/DuoPad-PC-Host-Pro.exe -Algorithm SHA256 | ForEach-Object { "SHA256: $($_.Hash)" } | Out-File dist/package/SHA256SUMS.txt -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
-          name: DuoPad-Windows-PC-Host-v5-Pro-R21
+          name: DuoPad-Windows-PC-Host-v5-Pro-R23
           path: dist/package/*
           if-no-files-found: error
           retention-days: 14
