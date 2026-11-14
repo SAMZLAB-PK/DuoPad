@@ -270,6 +270,7 @@ def _make_unique(folder, safe_name):
 
 
 class PcWorkspaceService:
+    phone_frames = PhoneMirrorFrames
     def __init__(self):
         self.capture = None
         self.capture_ctx = None
